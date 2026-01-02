@@ -5,7 +5,7 @@ from typing import Any, overload
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 from peritype.collections import TypeBag, TypeMap
 
-from soupape.resolver import ServiceDefaultResolver, ServiceResolverFactory
+from soupape.resolvers import ServiceDefaultResolver
 from soupape.types import InjectionScope, ServiceResolver, TypeResolverMetadata
 
 
@@ -68,9 +68,7 @@ class ServiceCollection:
             assert resolver is None
             wrap_interface = wrap_type(interface)
             wrap_implementation = wrap_type(implementation)
-            resolver = ServiceResolverFactory(
-                lambda injector: ServiceDefaultResolver(injector, self, wrap_interface, wrap_implementation)
-            )
+            resolver = ServiceDefaultResolver(self, wrap_interface, wrap_implementation)
             signature = wrap_implementation.signature
             fwrap = wrap_interface.init
 

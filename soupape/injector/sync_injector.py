@@ -1,11 +1,12 @@
 import asyncio
+import inspect
 from collections.abc import Callable
 from typing import Any, Unpack, cast, overload
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
 from soupape.collection import ServiceCollection
-from soupape.errors import AsyncInSyncInjectorError
+from soupape.errors import AsyncGenInSyncInjectorError, AsyncInSyncInjectorError
 from soupape.injector import BaseInjector
 from soupape.instances import InstancePoolStack
 from soupape.types import InjectionScope, Injector, InjectorCallArgs, ResolverCallArgs, ResolverMetadata
@@ -15,6 +16,10 @@ class SyncInjector(BaseInjector, Injector):
     def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
         super().__init__(services, instance_pool)
         self._set_injector_in_services()
+
+    @property
+    def is_async(self) -> bool:
+        return False
 
     def _set_injector_in_services(self) -> None:
         injector_w = wrap_type(SyncInjector)
@@ -52,13 +57,17 @@ class SyncInjector(BaseInjector, Injector):
         resolver = self._get_resolver_from_call_args(resolver_args)
         resolved = resolver(*resolved_args, **resolved_kwargs)
 
-        if asyncio.iscoroutine(resolved):
+        if inspect.isgenerator(resolved):
+            resolved = cast(T, next(resolved))
+        elif inspect.isasyncgen(resolved):
+            raise AsyncGenInSyncInjectorError(resolved)
+        if inspect.iscoroutine(resolved):
             raise AsyncInSyncInjectorError(resolved)
 
         if resolver_args.interface is not None:
             self._set_instance(resolver_args.scope, resolver_args.interface, resolved)
 
-        return resolved
+        return resolved  # type: ignore
 
     def require[T](self, interface: type[T] | TWrap[T]) -> T:
         if not isinstance(interface, TWrap):

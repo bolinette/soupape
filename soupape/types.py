@@ -1,12 +1,20 @@
 import inspect
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Coroutine, Generator, Iterable
 from dataclasses import dataclass
 from enum import Enum, auto, unique
-from typing import Any, NotRequired, Protocol, TypedDict, Unpack
+from typing import Any, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
 
 from peritype import FWrap, TWrap
 
-type ServiceResolver[**P, T] = Callable[P, T] | Callable[P, Coroutine[Any, Any, T]]
+type ServiceResolver[**P, T] = (
+    Callable[P, T]
+    | Callable[P, Generator[T]]
+    | Callable[P, Iterable[T]]
+    | Callable[P, AsyncGenerator[T]]
+    | Callable[P, AsyncIterable[T]]
+    | Callable[P, Coroutine[Any, Any, T]]
+    | Callable[P, Awaitable[T]]
+)
 
 
 class InjectorCallArgs(TypedDict):
@@ -14,6 +22,9 @@ class InjectorCallArgs(TypedDict):
 
 
 class Injector(Protocol):
+    @property
+    def is_async(self) -> bool: ...
+
     def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
 
     def call[T](
@@ -23,6 +34,35 @@ class Injector(Protocol):
     ) -> T | Awaitable[T]: ...
 
     def get_scoped_injector(self) -> "Injector": ...
+
+
+@runtime_checkable
+class ServiceResolverFactory(Protocol):
+    def with_injector(self, injector: Injector) -> "ServiceResolver[..., Any]": ...
+
+
+@runtime_checkable
+class SyncContextManager(Protocol):
+    def __enter__(self) -> "SyncContextManager": ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any,
+    ) -> None: ...
+
+
+@runtime_checkable
+class AsyncContextManager(Protocol):
+    async def __aenter__(self) -> "AsyncContextManager": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any,
+    ) -> None: ...
 
 
 @unique

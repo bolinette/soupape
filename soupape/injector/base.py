@@ -5,7 +5,6 @@ from peritype import TWrap
 from soupape import ServiceCollection
 from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
 from soupape.instances import InstancePoolStack
-from soupape.resolver import ServiceResolverFactory
 from soupape.types import (
     InjectionScope,
     Injector,
@@ -13,6 +12,7 @@ from soupape.types import (
     ResolverCallArgs,
     ResolverMetadata,
     ServiceResolver,
+    ServiceResolverFactory,
     TypeResolverMetadata,
 )
 
@@ -99,5 +99,5 @@ class BaseInjector(Injector):
 
     def _get_resolver_from_call_args(self, call_args: ResolverCallArgs[..., Any]) -> ServiceResolver[..., Any]:
         if isinstance(call_args.resolver, ServiceResolverFactory):
-            return call_args.resolver(self)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+            return call_args.resolver.with_injector(self)
         return call_args.resolver

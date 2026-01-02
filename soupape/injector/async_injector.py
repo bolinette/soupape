@@ -16,6 +16,10 @@ class AsyncInjector(BaseInjector, Injector):
         super().__init__(services, instance_pool)
         self._set_injector_in_services()
 
+    @property
+    def is_async(self) -> bool:
+        return True
+
     def _set_injector_in_services(self) -> None:
         injector_w = wrap_type(AsyncInjector)
         if not self._services.is_registered(injector_w):

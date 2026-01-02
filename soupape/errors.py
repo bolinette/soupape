@@ -1,4 +1,4 @@
-from collections.abc import Awaitable
+from collections.abc import AsyncIterable, Awaitable
 from typing import Any
 
 
@@ -40,3 +40,12 @@ class AsyncInSyncInjectorError(SoupapeError):
             "Cannot call asynchronous resolver in synchronous injector.",
         )
         self.coro = coro
+
+
+class AsyncGenInSyncInjectorError(SoupapeError):
+    def __init__(self, gen: AsyncIterable[Any]) -> None:
+        super().__init__(
+            "soupape.injector.async_gen_in_sync",
+            "Cannot call asynchronous generator resolver in synchronous injector.",
+        )
+        self.gen = gen

@@ -1,0 +1,3 @@
+from soupape.resolvers.async_default import AsyncServiceDefaultResolver as AsyncServiceDefaultResolver
+from soupape.resolvers.sync_default import SyncServiceDefaultResolver as SyncServiceDefaultResolver
+from soupape.resolvers.default import ServiceDefaultResolver as ServiceDefaultResolver
