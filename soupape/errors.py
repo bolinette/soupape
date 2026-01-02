@@ -1,3 +1,7 @@
+from collections.abc import Awaitable
+from typing import Any
+
+
 class SoupapeError(Exception):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"[{code}] {message}")
@@ -19,3 +23,20 @@ class MissingTypeHintError(SoupapeError):
             "soupape.type_hint.missing",
             f"Missing type hint for parameter '{parameter}' of '{fwrap}'.",
         )
+
+
+class ScopedServiceNotAvailableError(SoupapeError):
+    def __init__(self, interface: str) -> None:
+        super().__init__(
+            "soupape.scoped_service.not_available",
+            f"Scoped service for interface '{interface}' is not available in the root scope.",
+        )
+
+
+class AsyncInSyncInjectorError(SoupapeError):
+    def __init__(self, coro: Awaitable[Any]) -> None:
+        super().__init__(
+            "soupape.injector.async_in_sync",
+            "Cannot call asynchronous resolver in synchronous injector.",
+        )
+        self.coro = coro

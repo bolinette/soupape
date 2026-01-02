@@ -1,21 +1,41 @@
-from typing import Any
+from typing import Any, Self
 
 from peritype import TWrap
 
 from soupape import ServiceCollection
-from soupape.errors import MissingTypeHintError, ServiceNotFoundError
+from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
 from soupape.instances import InstancePoolStack
-from soupape.types import InjectionScope, ResolverCallArgs, ResolverMetadata, TypeResolverMetadata
+from soupape.resolver import ServiceResolverFactory
+from soupape.types import (
+    InjectionScope,
+    Injector,
+    InjectorCallArgs,
+    ResolverCallArgs,
+    ResolverMetadata,
+    ServiceResolver,
+    TypeResolverMetadata,
+)
 
 
-class BaseInjector:
+class BaseInjector(Injector):
     def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
-        self._services = services
+        self._services = services.copy()
         self._instance_pool = instance_pool if instance_pool is not None else InstancePoolStack()
 
     @property
     def is_root_injector(self) -> bool:
         return len(self._instance_pool) == 1
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any,
+    ) -> None:
+        pass
 
     def _has_instance(self, twrap: TWrap[Any]) -> bool:
         return twrap in self._instance_pool
@@ -28,7 +48,7 @@ class BaseInjector:
                 set_to_root = True
             case InjectionScope.SCOPED:
                 if self.is_root_injector:
-                    raise RuntimeError("Cannot instantiate scoped service in root injector.")
+                    raise ScopedServiceNotAvailableError(str(twrap))
                 set_to_root = False
         self._instance_pool.set_instance(twrap, instance, root=set_to_root)
 
@@ -43,11 +63,22 @@ class BaseInjector:
     def _build_resolve_tree(
         self,
         metadata: ResolverMetadata[..., Any] | TypeResolverMetadata[..., Any],
+        *,
+        injector_args: InjectorCallArgs | None = None,
     ) -> ResolverCallArgs[..., Any]:
         args: list[ResolverCallArgs[..., Any]] = []
         kwargs: dict[str, ResolverCallArgs[..., Any]] = {}
         hints = metadata.fwrap.get_signature_hints()
+
+        if injector_args is not None and "positional_args" in injector_args:
+            skip = len(injector_args["positional_args"])
+        else:
+            skip = 0
+
         for param_name, param in metadata.signature.parameters.items():
+            if skip > 0:
+                skip -= 1
+                continue
             if param_name not in hints:
                 raise MissingTypeHintError(param_name, str(metadata.fwrap))
             hint = hints[param_name]
@@ -65,3 +96,8 @@ class BaseInjector:
             metadata.resolver,
             metadata.interface if isinstance(metadata, TypeResolverMetadata) else None,
         )
+
+    def _get_resolver_from_call_args(self, call_args: ResolverCallArgs[..., Any]) -> ServiceResolver[..., Any]:
+        if isinstance(call_args.resolver, ServiceResolverFactory):
+            return call_args.resolver(self)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        return call_args.resolver

@@ -1,12 +1,28 @@
 import inspect
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from enum import Enum, auto, unique
-from typing import Any
+from typing import Any, NotRequired, Protocol, TypedDict, Unpack
 
 from peritype import FWrap, TWrap
 
 type ServiceResolver[**P, T] = Callable[P, T] | Callable[P, Coroutine[Any, Any, T]]
+
+
+class InjectorCallArgs(TypedDict):
+    positional_args: NotRequired[list[Any]]
+
+
+class Injector(Protocol):
+    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
+
+    def call[T](
+        self,
+        callable: Callable[..., T] | FWrap[..., T],
+        **kwargs: Unpack[InjectorCallArgs],
+    ) -> T | Awaitable[T]: ...
+
+    def get_scoped_injector(self) -> "Injector": ...
 
 
 @unique
