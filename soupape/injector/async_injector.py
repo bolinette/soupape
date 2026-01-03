@@ -1,7 +1,7 @@
 import asyncio
 import inspect
-from collections.abc import Callable, Coroutine
-from typing import Any, Unpack, cast, overload
+from collections.abc import AsyncGenerator, Callable, Coroutine
+from typing import Any, Self, Unpack, cast, overload
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
@@ -14,11 +14,32 @@ from soupape.types import InjectionScope, Injector, InjectorCallArgs, ResolverCa
 class AsyncInjector(BaseInjector, Injector):
     def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
         super().__init__(services, instance_pool)
+        self._async_generators_to_close: list[AsyncGenerator[Any]] = []
         self._set_injector_in_services()
 
     @property
     def is_async(self) -> bool:
         return True
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any,
+    ) -> None:
+        for gen in self._generators_to_close:
+            try:
+                next(gen)
+            except StopIteration:
+                pass
+        for agen in self._async_generators_to_close:
+            try:
+                await anext(agen)
+            except StopAsyncIteration:
+                pass
 
     def _set_injector_in_services(self) -> None:
         injector_w = wrap_type(AsyncInjector)
@@ -56,11 +77,13 @@ class AsyncInjector(BaseInjector, Injector):
         resolved = resolver(*resolved_args, **resolved_kwargs)
 
         if inspect.isgenerator(resolved):
-            resolved = cast(T, next(resolved))
+            self._generators_to_close.append(resolved)
+            resolved = next(resolved)
         elif inspect.isasyncgen(resolved):
-            resolved = cast(T, await anext(resolved))
+            self._async_generators_to_close.append(resolved)
+            resolved = await anext(resolved)
         if inspect.iscoroutine(resolved):
-            resolved = cast(T, await resolved)
+            resolved = await resolved
 
         if resolver_args.interface is not None:
             self._set_instance(resolver_args.scope, resolver_args.interface, resolved)

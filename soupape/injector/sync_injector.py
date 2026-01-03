@@ -6,7 +6,7 @@ from typing import Any, Unpack, cast, overload
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
 from soupape.collection import ServiceCollection
-from soupape.errors import AsyncGenInSyncInjectorError, AsyncInSyncInjectorError
+from soupape.errors import AsyncInSyncInjectorError
 from soupape.injector import BaseInjector
 from soupape.instances import InstancePoolStack
 from soupape.types import InjectionScope, Injector, InjectorCallArgs, ResolverCallArgs, ResolverMetadata
@@ -58,9 +58,10 @@ class SyncInjector(BaseInjector, Injector):
         resolved = resolver(*resolved_args, **resolved_kwargs)
 
         if inspect.isgenerator(resolved):
-            resolved = cast(T, next(resolved))
+            self._generators_to_close.append(resolved)
+            resolved = next(resolved)
         elif inspect.isasyncgen(resolved):
-            raise AsyncGenInSyncInjectorError(resolved)
+            raise AsyncInSyncInjectorError(resolved)
         if inspect.iscoroutine(resolved):
             raise AsyncInSyncInjectorError(resolved)
 

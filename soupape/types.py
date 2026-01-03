@@ -2,6 +2,7 @@ import inspect
 from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Coroutine, Generator, Iterable
 from dataclasses import dataclass
 from enum import Enum, auto, unique
+from types import TracebackType
 from typing import Any, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
 
 from peritype import FWrap, TWrap
@@ -49,7 +50,7 @@ class SyncContextManager(Protocol):
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: Any,
+        traceback: TracebackType | None,
     ) -> None: ...
 
 
@@ -61,7 +62,7 @@ class AsyncContextManager(Protocol):
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: Any,
+        traceback: TracebackType | None,
     ) -> None: ...
 
 

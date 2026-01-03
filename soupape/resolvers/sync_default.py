@@ -3,7 +3,7 @@ from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from soupape.errors import AsyncInSyncInjectorError
-from soupape.types import Injector
+from soupape.types import Injector, SyncContextManager
 
 if TYPE_CHECKING:
     from soupape.resolvers import ServiceDefaultResolver
@@ -21,4 +21,8 @@ class SyncServiceDefaultResolver[T]:
             result = self.injector.call(post_init, positional_args=[instance])
             if asyncio.iscoroutine(result):
                 raise AsyncInSyncInjectorError(result)
+        if isinstance(instance, SyncContextManager):
+            with instance:
+                yield instance  # pyright: ignore[reportReturnType]
+            return
         yield instance

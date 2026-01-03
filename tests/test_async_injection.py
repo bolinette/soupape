@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator, Generator
+from types import TracebackType
 
 import pytest
 
@@ -612,3 +613,105 @@ async def test_inject_yield_resolver() -> None:
     resource = await injector.require(Resource)
 
     assert resource.active is True
+
+
+@pytest.mark.asyncio
+async def test_injection_context_manager_sync_resolver() -> None:
+    services = ServiceCollection()
+
+    class Resource:
+        def __init__(self) -> None:
+            self.active = True
+
+        def close(self) -> None:
+            self.active = False
+
+    def resource_resolver() -> Generator[Resource]:
+        res = Resource()
+        yield res
+        res.close()
+
+    services.add_singleton(resource_resolver)
+
+    async with AsyncInjector(services) as injector:
+        resource = await injector.require(Resource)
+        assert resource.active is True
+    assert resource.active is False
+
+
+@pytest.mark.asyncio
+async def test_injection_context_manager_async_resolver() -> None:
+    services = ServiceCollection()
+
+    class Resource:
+        def __init__(self) -> None:
+            self.active = True
+
+        def close(self) -> None:
+            self.active = False
+
+    async def resource_resolver() -> AsyncGenerator[Resource]:
+        res = Resource()
+        yield res
+        res.close()
+
+    services.add_singleton(resource_resolver)
+
+    async with AsyncInjector(services) as injector:
+        resource = await injector.require(Resource)
+        assert resource.active is True
+    assert resource.active is False
+
+
+@pytest.mark.asyncio
+async def test_injection_context_manager_service() -> None:
+    services = ServiceCollection()
+
+    class Resource:
+        def __init__(self) -> None:
+            self.active = True
+
+        def __enter__(self) -> "Resource":
+            return self
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException],
+            exc_value: BaseException | None,
+            traceback: TracebackType | None,
+        ) -> None:
+            self.active = False
+
+    services.add_singleton(Resource)
+
+    async with AsyncInjector(services) as injector:
+        resource = await injector.require(Resource)
+        assert resource.active is True
+    assert resource.active is False
+
+
+@pytest.mark.asyncio
+async def test_injection_async_context_manager_service() -> None:
+    services = ServiceCollection()
+
+    class Resource:
+        def __init__(self) -> None:
+            self.active = True
+
+        async def __aenter__(self) -> "Resource":
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException],
+            exc_value: BaseException | None,
+            traceback: TracebackType | None,
+        ) -> None:
+            self.active = False
+
+    services.add_singleton(Resource)
+
+    async with AsyncInjector(services) as injector:
+        resource = await injector.require(Resource)
+        assert resource.active is True
+    assert resource.active is False

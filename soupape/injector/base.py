@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from typing import Any, Self
 
 from peritype import TWrap
@@ -21,6 +22,7 @@ class BaseInjector(Injector):
     def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
         self._services = services.copy()
         self._instance_pool = instance_pool if instance_pool is not None else InstancePoolStack()
+        self._generators_to_close: list[Generator[Any]] = []
 
     @property
     def is_root_injector(self) -> bool:
@@ -35,7 +37,11 @@ class BaseInjector(Injector):
         exc_value: BaseException | None,
         traceback: Any,
     ) -> None:
-        pass
+        for gen in self._generators_to_close:
+            try:
+                next(gen)
+            except StopIteration:
+                pass
 
     def _has_instance(self, twrap: TWrap[Any]) -> bool:
         return twrap in self._instance_pool

@@ -34,18 +34,13 @@ class ScopedServiceNotAvailableError(SoupapeError):
 
 
 class AsyncInSyncInjectorError(SoupapeError):
-    def __init__(self, coro: Awaitable[Any]) -> None:
+    def __init__(self, coro: Awaitable[Any] | AsyncIterable[Any]) -> None:
         super().__init__(
             "soupape.injector.async_in_sync",
             "Cannot call asynchronous resolver in synchronous injector.",
         )
-        self.coro = coro
+        self._coro = coro
 
-
-class AsyncGenInSyncInjectorError(SoupapeError):
-    def __init__(self, gen: AsyncIterable[Any]) -> None:
-        super().__init__(
-            "soupape.injector.async_gen_in_sync",
-            "Cannot call asynchronous generator resolver in synchronous injector.",
-        )
-        self.gen = gen
+    async def close(self) -> None:
+        if isinstance(self._coro, Awaitable):
+            await self._coro
