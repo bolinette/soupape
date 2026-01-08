@@ -1,10 +1,12 @@
 import asyncio
 from collections.abc import AsyncGenerator, Generator
 from types import TracebackType
+from typing import Any
 
 import pytest
+from peritype import TWrap, wrap_type
 
-from soupape import AsyncInjector, ServiceCollection, post_init
+from soupape import AsyncInjector, Injector, ServiceCollection, post_init
 from soupape.errors import (
     MissingTypeHintError,
     ScopedServiceNotAvailableError,
@@ -29,6 +31,47 @@ async def test_simple_injection() -> None:
     service = await injector.require(TestService)
 
     assert service.greet() == "Hello, World!"
+
+
+@pytest.mark.asyncio
+async def test_inject_generic_type() -> None:
+    class Service[T]: ...
+
+    services = ServiceCollection()
+    services.add_singleton(Service[str])
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service[str])
+        assert service is not None
+        assert isinstance(service, Service)
+
+
+@pytest.mark.asyncio
+async def test_fail_service_not_found() -> None:
+    services = ServiceCollection()
+
+    class TestService:
+        def __init__(self) -> None:
+            pass
+
+        def greet(self) -> str:
+            return "Hello, World!"
+
+    injector = AsyncInjector(services)
+    with pytest.raises(ServiceNotFoundError):
+        await injector.require(TestService)
+
+
+@pytest.mark.asyncio
+async def test_fail_generic_service_not_found() -> None:
+    class Service[T]: ...
+
+    services = ServiceCollection()
+    services.add_singleton(Service[int])
+
+    injector = AsyncInjector(services)
+    with pytest.raises(ServiceNotFoundError):
+        await injector.require(Service[str])
 
 
 @pytest.mark.asyncio
@@ -82,6 +125,29 @@ async def test_inject_with_async_resolver() -> None:
 
 
 @pytest.mark.asyncio
+async def test_inject_with_catch_all_resolver() -> None:
+    services = ServiceCollection()
+
+    class AsyncService[T]:
+        def __init__(self) -> None:
+            pass
+
+        async def fetch_data(self) -> str:
+            return "Async Data"
+
+    async def async_service_resolver() -> AsyncService[Any]:
+        return AsyncService()
+
+    services.add_singleton(async_service_resolver)
+
+    injector = AsyncInjector(services)
+    service = await injector.require(AsyncService[int])
+
+    data = await service.fetch_data()
+    assert data == "Async Data"
+
+
+@pytest.mark.asyncio
 async def test_inject_resolver_with_params() -> None:
     services = ServiceCollection()
 
@@ -113,6 +179,22 @@ async def test_inject_resolver_with_params() -> None:
 
 
 @pytest.mark.asyncio
+async def test_inject_service_twice() -> None:
+    services = ServiceCollection()
+
+    class AsyncService:
+        def __init__(self) -> None: ...
+
+    services.add_singleton(AsyncService)
+
+    injector = AsyncInjector(services)
+    service1 = await injector.require(AsyncService)
+    service2 = await injector.require(AsyncService)
+
+    assert service1 is service2
+
+
+@pytest.mark.asyncio
 async def test_inject_with_async_resolver_twice() -> None:
     services = ServiceCollection()
 
@@ -129,6 +211,30 @@ async def test_inject_with_async_resolver_twice() -> None:
     service2 = await injector.require(AsyncService)
 
     assert service1 is service2
+
+
+@pytest.mark.asyncio
+async def test_inject_with_async_resolver_custom_interface() -> None:
+    services = ServiceCollection()
+
+    class BaseService: ...
+
+    class AsyncService(BaseService):
+        def __init__(self) -> None: ...
+
+    async def async_service_resolver() -> AsyncService:
+        return AsyncService()
+
+    services.add_singleton(async_service_resolver)
+    services.add_singleton(async_service_resolver, BaseService)
+
+    injector = AsyncInjector(services)
+    service1 = await injector.require(AsyncService)
+    service2 = await injector.require(BaseService)
+
+    assert service1 is service2
+    assert isinstance(service1, AsyncService)
+    assert isinstance(service2, AsyncService)
 
 
 @pytest.mark.asyncio
@@ -525,6 +631,34 @@ async def test_inject_with_post_init() -> None:
 
 
 @pytest.mark.asyncio
+async def test_inject_with_inherited_post_init() -> None:
+    services = ServiceCollection()
+
+    class BaseService:
+        def __init__(self) -> None:
+            self.numbers: list[int] = []
+
+        @post_init
+        def initialize_base(self) -> None:
+            self.numbers.append(1)
+
+    class TestService(BaseService):
+        def __init__(self) -> None:
+            super().__init__()
+
+        @post_init
+        def initialize(self) -> None:
+            self.numbers.append(2)
+
+    services.add_singleton(TestService)
+
+    injector = AsyncInjector(services)
+    service = await injector.require(TestService)
+
+    assert service.numbers == [1, 2]
+
+
+@pytest.mark.asyncio
 async def test_inject_with_async_post_init() -> None:
     services = ServiceCollection()
 
@@ -715,3 +849,101 @@ async def test_injection_async_context_manager_service() -> None:
         resource = await injector.require(Resource)
         assert resource.active is True
     assert resource.active is False
+
+
+@pytest.mark.asyncio
+async def test_require_injector() -> None:
+    class Service:
+        def __init__(self, injector: AsyncInjector) -> None:
+            self.injector = injector
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service)
+        assert service.injector is injector
+
+
+@pytest.mark.asyncio
+async def test_require_injector_protocol() -> None:
+    class Service:
+        def __init__(self, injector: Injector) -> None:
+            self.injector = injector
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service)
+        assert service.injector is injector
+
+
+@pytest.mark.asyncio
+async def test_require_generic_type() -> None:
+    class Service[T]:
+        def __init__(self, cls: type[T]) -> None:
+            self.cls = cls
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service[str])
+        assert service.cls is str
+
+
+@pytest.mark.asyncio
+async def test_require_generic_twrap() -> None:
+    class Service[T]:
+        def __init__(self, tw: TWrap[T]) -> None:
+            self.tw = tw
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service[int])
+        assert service.tw == wrap_type(int)
+
+
+@pytest.mark.asyncio
+async def test_require_two_generic_twrap() -> None:
+    class Service[T, U]:
+        def __init__(self, tw1: TWrap[T], tw2: TWrap[U]) -> None:
+            self.tw1 = tw1
+            self.tw2 = tw2
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service[int, str])
+        assert service.tw1 == wrap_type(int)
+        assert service.tw2 == wrap_type(str)
+
+
+@pytest.mark.asyncio
+async def test_require_inherited_generic_twrap() -> None:
+    class SuperBaseService[T]:
+        @post_init
+        def _setup1(self, tw: TWrap[T]) -> None:
+            self.tw1 = tw
+
+    class BaseService[T, U](SuperBaseService[U]):
+        @post_init
+        def _setup2(self, tw: TWrap[T]) -> None:
+            self.tw2 = tw
+
+    class Service[T, U, V](BaseService[U, V]):
+        def __init__(self, tw: TWrap[T]) -> None:
+            self.tw3 = tw
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service[int, str, float])
+        assert service.tw1 == wrap_type(float)
+        assert service.tw2 == wrap_type(str)
+        assert service.tw3 == wrap_type(int)

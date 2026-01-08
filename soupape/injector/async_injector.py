@@ -8,7 +8,14 @@ from peritype import FWrap, TWrap, wrap_func, wrap_type
 from soupape.collection import ServiceCollection
 from soupape.injector import BaseInjector
 from soupape.instances import InstancePoolStack
-from soupape.types import InjectionScope, Injector, InjectorCallArgs, ResolverCallArgs, ResolverMetadata
+from soupape.types import (
+    InjectionContext,
+    InjectionScope,
+    Injector,
+    InjectorCallArgs,
+    ResolverCallArgs,
+    ResolverMetadata,
+)
 
 
 class AsyncInjector(BaseInjector, Injector):
@@ -42,38 +49,28 @@ class AsyncInjector(BaseInjector, Injector):
                 pass
 
     def _set_injector_in_services(self) -> None:
-        injector_w = wrap_type(AsyncInjector)
-        if not self._services.is_registered(injector_w):
-
-            def resolver() -> "AsyncInjector":
-                return self
-
-            self._services.add_singleton(resolver)
         self._instance_pool.set_instance(injector_w, self)
+        self._instance_pool.set_instance(async_injector_w, self)
 
     async def _resolve_service[T](
         self,
+        context: InjectionContext,
         resolver_args: ResolverCallArgs[..., T],
-        *,
-        injector_args: InjectorCallArgs | None = None,
     ) -> T:
-        if resolver_args.interface is not None and self._has_instance(resolver_args.interface):
-            return self._get_instance(resolver_args.interface)
-
         resolved_args: list[Any] = []
-        if injector_args is not None and "positional_args" in injector_args:
-            for arg in injector_args["positional_args"]:
+        if context.positional_args is not None:
+            for arg in context.positional_args:
                 resolved_args.append(arg)
         for arg in resolver_args.args:
-            resolved_arg = await self._resolve_service(arg)
+            resolved_arg = await self._resolve_service(context.copy(resolver_args.scope, arg.required), arg)
             resolved_args.append(resolved_arg)
 
         resolved_kwargs: dict[str, Any] = {}
         for kwarg_name, kwarg in resolver_args.kwargs.items():
-            resolved_kwarg = await self._resolve_service(kwarg)
+            resolved_kwarg = await self._resolve_service(context.copy(resolver_args.scope, kwarg.required), kwarg)
             resolved_kwargs[kwarg_name] = resolved_kwarg
 
-        resolver = self._get_resolver_from_call_args(resolver_args)
+        resolver = self._get_resolver_from_call_args(context, resolver_args)
         resolved = resolver(*resolved_args, **resolved_kwargs)
 
         if inspect.isgenerator(resolved):
@@ -85,8 +82,8 @@ class AsyncInjector(BaseInjector, Injector):
         if inspect.iscoroutine(resolved):
             resolved = await resolved
 
-        if resolver_args.interface is not None:
-            self._set_instance(resolver_args.scope, resolver_args.interface, resolved)
+        if resolver_args.register_as is not None:
+            self._set_instance(resolver_args.scope, resolver_args.register_as, resolved)
 
         return resolved  # type: ignore
 
@@ -99,8 +96,9 @@ class AsyncInjector(BaseInjector, Injector):
 
     async def _require[T](self, interface: TWrap[T]) -> T:
         metadata = self._get_service_metadata(interface)
-        resolver_args = self._build_resolve_tree(metadata)
-        resolved = await self._resolve_service(resolver_args)
+        context = self._get_injection_context(interface, metadata.scope, interface)
+        resolver_args = self._build_dependency_tree(context, metadata, required=interface)
+        resolved = await self._resolve_service(context, resolver_args)
         return resolved
 
     @overload
@@ -143,16 +141,25 @@ class AsyncInjector(BaseInjector, Injector):
                 return await resolved
             return resolved
 
-        resolver_args = self._build_resolve_tree(
+        context = self._get_injection_context(
+            kwargs.get("origin"),
+            InjectionScope.IMMEDIATE,
+            positional_args=kwargs.get("positional_args"),
+        )
+        resolver_args = self._build_dependency_tree(
+            context,
             ResolverMetadata(
                 scope=InjectionScope.IMMEDIATE,
                 signature=fwrap.signature,
                 fwrap=fwrap,
                 resolver=resolver,
             ),
-            injector_args=kwargs,
         )
-        return await self._resolve_service(resolver_args, injector_args=kwargs)
+        return await self._resolve_service(context, resolver_args)
 
     def get_scoped_injector(self) -> "AsyncInjector":
         return AsyncInjector(self._services, self._instance_pool.stack())
+
+
+async_injector_w = wrap_type(AsyncInjector)
+injector_w = wrap_type(Injector)

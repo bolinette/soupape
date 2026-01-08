@@ -3,8 +3,9 @@ from collections.abc import AsyncGenerator, Generator
 from types import TracebackType
 
 import pytest
+from peritype import TWrap, wrap_type
 
-from soupape import ServiceCollection, SyncInjector, post_init
+from soupape import Injector, ServiceCollection, SyncInjector, post_init
 from soupape.errors import AsyncInSyncInjectorError
 
 
@@ -329,3 +330,99 @@ async def test_sync_injection_async_context_manager_service() -> None:
         resource = injector.require(Resource)
         assert resource.active is True
     assert resource.active is True
+
+
+def test_require_injector() -> None:
+    class Service:
+        def __init__(self, injector: SyncInjector) -> None:
+            self.injector = injector
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service)
+        assert service.injector is injector
+
+
+def test_require_injector_protocol() -> None:
+    class Service:
+        def __init__(self, injector: Injector) -> None:
+            self.injector = injector
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service)
+        assert service.injector is injector
+
+
+@pytest.mark.asyncio
+async def test_require_generic_type() -> None:
+    class Service[T]:
+        def __init__(self, cls: type[T]) -> None:
+            self.cls = cls
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service[str])
+        assert service.cls is str
+
+
+@pytest.mark.asyncio
+async def test_require_generic_twrap() -> None:
+    class Service[T]:
+        def __init__(self, tw: TWrap[T]) -> None:
+            self.tw = tw
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service[int])
+        assert service.tw == wrap_type(int)
+
+
+@pytest.mark.asyncio
+async def test_require_two_generic_twrap() -> None:
+    class Service[T, U]:
+        def __init__(self, tw1: TWrap[T], tw2: TWrap[U]) -> None:
+            self.tw1 = tw1
+            self.tw2 = tw2
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service[int, str])
+        assert service.tw1 == wrap_type(int)
+        assert service.tw2 == wrap_type(str)
+
+
+@pytest.mark.asyncio
+async def test_require_inherited_generic_twrap() -> None:
+    class SuperBaseService[T]:
+        @post_init
+        def _setup1(self, tw: TWrap[T]) -> None:
+            self.tw1 = tw
+
+    class BaseService[T, U](SuperBaseService[U]):
+        @post_init
+        def _setup2(self, tw: TWrap[T]) -> None:
+            self.tw2 = tw
+
+    class Service[T, U, V](BaseService[U, V]):
+        def __init__(self, tw: TWrap[T]) -> None:
+            self.tw3 = tw
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service[int, str, float])
+        assert service.tw1 == wrap_type(float)
+        assert service.tw2 == wrap_type(str)
+        assert service.tw3 == wrap_type(int)

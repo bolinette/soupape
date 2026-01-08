@@ -1,3 +1,6 @@
-from soupape.resolvers.async_default import AsyncServiceDefaultResolver as AsyncServiceDefaultResolver
-from soupape.resolvers.sync_default import SyncServiceDefaultResolver as SyncServiceDefaultResolver
-from soupape.resolvers.default import ServiceDefaultResolver as ServiceDefaultResolver
+from soupape.resolvers.default import DefaultResolverFactory as DefaultResolverFactory
+from soupape.resolvers.instantiated import InstantiatedServiceResolver as InstantiatedServiceResolver
+from soupape.resolvers.raw import (
+    RawTypeResolverFactory as RawTypeResolverFactory,
+    WrappedTypeResolverFactory as WrappedTypeResolverFactory,
+)

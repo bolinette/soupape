@@ -1,12 +1,14 @@
 import inspect
-from collections.abc import AsyncGenerator, AsyncIterable, Callable, Generator, Iterable
+from collections.abc import AsyncGenerator, AsyncIterable, Generator, Iterable
 from typing import Any, overload
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 from peritype.collections import TypeBag, TypeMap
 
-from soupape.resolvers import ServiceDefaultResolver
+from soupape.errors import ServiceNotFoundError
+from soupape.resolvers import DefaultResolverFactory
 from soupape.types import InjectionScope, ServiceResolver, TypeResolverMetadata
+from soupape.utils import is_type_like
 
 
 class ServiceCollection:
@@ -43,32 +45,43 @@ class ServiceCollection:
         implementation: type[Any] | None = None
         interface: type[Any] | None = None
         match args:
-            case (type() as i1,):
-                implementation = i1
-                interface = i1
+            case (arg1,) if is_type_like(arg1):
+                interface = arg1
+                implementation = arg1
                 resolver = None
-            case (type() as i1, type() as i2):
-                interface = i1
-                implementation = i2
+            case (arg1, arg2) if is_type_like(arg1) and is_type_like(arg2):
+                interface = arg1
+                implementation = arg2
                 resolver = None
-            case (Callable() as r1,):
+            case (arg1,) if callable(arg1):
                 interface = None
                 implementation = None
-                resolver = r1
+                resolver = arg1
+            case (arg1, arg2) if callable(arg1) and is_type_like(arg2):
+                interface = arg2
+                implementation = None
+                resolver = arg1
             case _:
                 raise TypeError()
 
-        if interface is None or implementation is None:
-            assert resolver is not None
-            fwrap = wrap_func(resolver)
-            wrap_interface = self._unpack_resolver_function_return(fwrap)
-            wrap_implementation = wrap_interface
+        if resolver is not None:
+            if inspect.ismethod(resolver) or inspect.isfunction(resolver):
+                fwrap = wrap_func(resolver)
+            else:
+                fwrap = wrap_func(resolver.__call__)
+            resolver_return = self._unpack_resolver_function_return(fwrap)
+            if interface is None:
+                wrap_interface = resolver_return
+                wrap_implementation = resolver_return
+            else:
+                wrap_interface = wrap_type(interface)
+                wrap_implementation = resolver_return
             signature = fwrap.signature
         else:
-            assert resolver is None
+            assert implementation is not None and interface is not None
             wrap_interface = wrap_type(interface)
             wrap_implementation = wrap_type(implementation)
-            resolver = ServiceDefaultResolver(self, wrap_interface, wrap_implementation)
+            resolver = DefaultResolverFactory(self, wrap_interface, wrap_implementation)
             signature = wrap_implementation.signature
             fwrap = wrap_interface.init
 
@@ -84,12 +97,18 @@ class ServiceCollection:
     def is_registered[T](self, interface: type[T] | TWrap[T]) -> bool:
         if not isinstance(interface, TWrap):
             interface = wrap_type(interface)
-        return interface in self._registered_services
+        return interface in self._registered_services or self._registered_services.contains_matching(interface)
 
     def get_metadata[T](self, interface: type[T] | TWrap[T]) -> TypeResolverMetadata[..., T]:
         if not isinstance(interface, TWrap):
             interface = wrap_type(interface)
-        return self._resolvers[interface]
+        if interface in self._registered_services:
+            return self._resolvers[interface]
+        if self._registered_services.contains_matching(interface):
+            matched = self._registered_services.get_matching(interface)
+            assert matched is not None
+            return self._resolvers[matched]
+        raise ServiceNotFoundError(str(interface))
 
     @overload
     def add_singleton[IntrT, ImplT](self, interface: type[IntrT], implementation: type[ImplT], /) -> None: ...
@@ -97,6 +116,9 @@ class ServiceCollection:
     def add_singleton[ImplT](self, implementation: type[ImplT], /) -> None: ...
     @overload
     def add_singleton[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], /) -> None: ...
+    @overload
+    def add_singleton[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], interface: type[IntrT], /) -> None: ...
+
     def add_singleton(self, *args: Any) -> None:
         metadata = self._unpack_registration_args(InjectionScope.SINGLETON, args)
         self._add_resolver(metadata)
@@ -107,6 +129,9 @@ class ServiceCollection:
     def add_scoped[ImplT](self, implementation: type[ImplT], /) -> None: ...
     @overload
     def add_scoped[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], /) -> None: ...
+    @overload
+    def add_scoped[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], interface: type[IntrT], /) -> None: ...
+
     def add_scoped(self, *args: Any) -> None:
         metadata = self._unpack_registration_args(InjectionScope.SCOPED, args)
         self._add_resolver(metadata)
@@ -117,6 +142,9 @@ class ServiceCollection:
     def add_transient[ImplT](self, implementation: type[ImplT], /) -> None: ...
     @overload
     def add_transient[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], /) -> None: ...
+    @overload
+    def add_transient[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], interface: type[IntrT], /) -> None: ...
+
     def add_transient(self, *args: Any) -> None:
         metadata = self._unpack_registration_args(InjectionScope.TRANSIENT, args)
         self._add_resolver(metadata)

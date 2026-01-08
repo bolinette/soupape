@@ -20,6 +20,7 @@ type ServiceResolver[**P, T] = (
 
 class InjectorCallArgs(TypedDict):
     positional_args: NotRequired[list[Any]]
+    origin: NotRequired[TWrap[Any] | None]
 
 
 class Injector(Protocol):
@@ -35,35 +36,6 @@ class Injector(Protocol):
     ) -> T | Awaitable[T]: ...
 
     def get_scoped_injector(self) -> "Injector": ...
-
-
-@runtime_checkable
-class ServiceResolverFactory(Protocol):
-    def with_injector(self, injector: Injector) -> "ServiceResolver[..., Any]": ...
-
-
-@runtime_checkable
-class SyncContextManager(Protocol):
-    def __enter__(self) -> "SyncContextManager": ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
-
-
-@runtime_checkable
-class AsyncContextManager(Protocol):
-    async def __aenter__(self) -> "AsyncContextManager": ...
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None: ...
 
 
 @unique
@@ -94,4 +66,57 @@ class ResolverCallArgs[**P, T]:
     args: "list[ResolverCallArgs[..., Any]]"
     kwargs: "dict[str, ResolverCallArgs[..., Any]]"
     resolver: ServiceResolver[P, T]
-    interface: TWrap[T] | None
+    required: TWrap[T] | None
+    register_as: TWrap[Any] | None
+
+
+@dataclass
+class InjectionContext:
+    injector: Injector
+    origin: TWrap[Any] | None
+    scope: "InjectionScope"
+    required: TWrap[Any] | None
+    positional_args: list[Any] | None = None
+
+    def copy(
+        self,
+        scope: "InjectionScope",
+        required: TWrap[Any] | None = None,
+        positional_args: list[Any] | None = None,
+    ) -> "InjectionContext":
+        return InjectionContext(
+            injector=self.injector,
+            origin=self.origin,
+            scope=scope,
+            required=required,
+            positional_args=positional_args,
+        )
+
+
+@runtime_checkable
+class ServiceResolverFactory(Protocol):
+    def __with_context__(self, context: InjectionContext) -> ServiceResolver[..., Any]: ...
+
+
+@runtime_checkable
+class SyncContextManager(Protocol):
+    def __enter__(self) -> "SyncContextManager": ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None: ...
+
+
+@runtime_checkable
+class AsyncContextManager(Protocol):
+    async def __aenter__(self) -> "AsyncContextManager": ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None: ...
