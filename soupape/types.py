@@ -1,4 +1,3 @@
-import inspect
 from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Coroutine, Generator, Iterable
 from dataclasses import dataclass
 from enum import Enum, auto, unique
@@ -7,7 +6,9 @@ from typing import Any, NotRequired, Protocol, TypedDict, Unpack, runtime_checka
 
 from peritype import FWrap, TWrap
 
-type ServiceResolver[**P, T] = (
+from soupape.instances import InstancePoolStack
+
+type ResolveFunction[**P, T] = (
     Callable[P, T]
     | Callable[P, Generator[T]]
     | Callable[P, Iterable[T]]
@@ -27,6 +28,9 @@ class Injector(Protocol):
     @property
     def is_async(self) -> bool: ...
 
+    @property
+    def instances(self) -> InstancePoolStack: ...
+
     def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
 
     def call[T](
@@ -44,30 +48,6 @@ class InjectionScope(Enum):
     SCOPED = auto()
     TRANSIENT = auto()
     IMMEDIATE = auto()
-
-
-@dataclass
-class ResolverMetadata[**P, T]:
-    scope: InjectionScope
-    signature: inspect.Signature
-    fwrap: FWrap[P, T]
-    resolver: ServiceResolver[P, T]
-
-
-@dataclass
-class TypeResolverMetadata[**P, T](ResolverMetadata[P, T]):
-    interface: TWrap[T]
-    implementation: TWrap[Any]
-
-
-@dataclass
-class ResolverCallArgs[**P, T]:
-    scope: InjectionScope
-    args: "list[ResolverCallArgs[..., Any]]"
-    kwargs: "dict[str, ResolverCallArgs[..., Any]]"
-    resolver: ServiceResolver[P, T]
-    required: TWrap[T] | None
-    register_as: TWrap[Any] | None
 
 
 @dataclass
@@ -91,11 +71,6 @@ class InjectionContext:
             required=required,
             positional_args=positional_args,
         )
-
-
-@runtime_checkable
-class ServiceResolverFactory(Protocol):
-    def __with_context__(self, context: InjectionContext) -> ServiceResolver[..., Any]: ...
 
 
 @runtime_checkable

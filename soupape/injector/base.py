@@ -6,16 +6,17 @@ from peritype import TWrap
 from soupape import ServiceCollection
 from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
 from soupape.instances import InstancePoolStack
-from soupape.resolvers import InstantiatedServiceResolver, RawTypeResolverFactory, WrappedTypeResolverFactory
+from soupape.resolvers import (
+    DependencyTreeNode,
+    InstantiatedResolverContainer,
+    RawTypeResolverContainer,
+    ServiceResolver,
+    WrappedTypeResolverContainer,
+)
 from soupape.types import (
     InjectionContext,
     InjectionScope,
     Injector,
-    ResolverCallArgs,
-    ResolverMetadata,
-    ServiceResolver,
-    ServiceResolverFactory,
-    TypeResolverMetadata,
 )
 
 
@@ -27,10 +28,9 @@ class BaseInjector(Injector):
         self._register_common_resolvers()
 
     def _register_common_resolvers(self) -> None:
-        if not self._services.is_registered(type[Any]):
-            self._services.add_transient(RawTypeResolverFactory(), type[Any])
-        if not self._services.is_registered(TWrap[Any]):
-            self._services.add_transient(WrappedTypeResolverFactory(), TWrap[Any])
+        if self.is_root_injector:
+            self._services.add_resolver(RawTypeResolverContainer())
+            self._services.add_resolver(WrappedTypeResolverContainer())
 
     def _get_injection_context(
         self,
@@ -44,6 +44,10 @@ class BaseInjector(Injector):
     @property
     def is_root_injector(self) -> bool:
         return len(self._instance_pool) == 1
+
+    @property
+    def instances(self) -> InstancePoolStack:
+        return self._instance_pool
 
     def __enter__(self) -> Self:
         return self
@@ -82,28 +86,16 @@ class BaseInjector(Injector):
         self,
         interface: TWrap[T],
         implementation: TWrap[Any] | None = None,
-    ) -> TypeResolverMetadata[..., Any]:
-        resolver = InstantiatedServiceResolver(
-            self._instance_pool,
-            implementation if implementation is not None else interface,
-        )
-        return TypeResolverMetadata(
-            InjectionScope.IMMEDIATE,
-            InstantiatedServiceResolver.get_empty_signature(),
-            InstantiatedServiceResolver.get_empty_func(),
-            resolver,
-            interface,
-            implementation if implementation is not None else interface,
-        )
+    ) -> ServiceResolver[..., Any]:
+        return InstantiatedResolverContainer(interface, implementation or interface)
 
-    def _get_service_metadata(self, interface: TWrap[Any]) -> TypeResolverMetadata[..., Any]:
+    def _get_service_resolver(self, interface: TWrap[Any]) -> ServiceResolver[..., Any]:
         if self._services.is_registered(interface):
-            metadata = self._services.get_metadata(interface)
-            interface = metadata.interface
-            implementation = metadata.implementation
-            if self._has_instance(implementation):
-                return self._make_instantiated_resolver(interface, implementation)
-            return metadata
+            resolver = self._services.get_resolver(interface)
+            registered = resolver.registered
+            if registered is not None and self._has_instance(registered):
+                return self._make_instantiated_resolver(interface, registered)
+            return resolver
         if self._has_instance(interface):
             return self._make_instantiated_resolver(interface)
         raise ServiceNotFoundError(str(interface))
@@ -111,47 +103,39 @@ class BaseInjector(Injector):
     def _build_dependency_tree(
         self,
         context: InjectionContext,
-        metadata: ResolverMetadata[..., Any] | TypeResolverMetadata[..., Any],
-        *,
-        required: TWrap[Any] | None = None,
-    ) -> ResolverCallArgs[..., Any]:
-        args: list[ResolverCallArgs[..., Any]] = []
-        kwargs: dict[str, ResolverCallArgs[..., Any]] = {}
-        hints = metadata.fwrap.get_signature_hints(belongs_to=context.origin)
+        resolver: ServiceResolver[..., Any],
+    ) -> DependencyTreeNode[..., Any]:
+        args: list[DependencyTreeNode[..., Any]] = []
+        kwargs: dict[str, DependencyTreeNode[..., Any]] = {}
+        hints = resolver.get_resolve_hints(belongs_to=context.origin)
 
         if context.positional_args is not None:
             skip = len(context.positional_args)
         else:
             skip = 0
 
-        for param_name, param in metadata.signature.parameters.items():
+        for param_name, param in resolver.get_resolve_signature().parameters.items():
             if skip > 0:
                 skip -= 1
                 continue
             if param_name not in hints:
-                raise MissingTypeHintError(param_name, str(metadata.fwrap))
+                raise MissingTypeHintError(param_name, resolver.name)
             hint = hints[param_name]
-            hint_metadata = self._get_service_metadata(hint)
-            resolver_args = self._build_dependency_tree(context, hint_metadata, required=hint)
+            hint_resolver = self._get_service_resolver(hint)
+            dep_node = self._build_dependency_tree(
+                context.copy(hint_resolver.scope, hint),
+                hint_resolver,
+            )
             if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
-                args.append(resolver_args)
+                args.append(dep_node)
             elif param.kind == param.KEYWORD_ONLY:
-                kwargs[param_name] = resolver_args
+                kwargs[param_name] = dep_node
 
-        return ResolverCallArgs(
-            metadata.scope,
-            args,
-            kwargs,
-            metadata.resolver,
-            required,
-            metadata.implementation if isinstance(metadata, TypeResolverMetadata) else None,
+        return DependencyTreeNode(
+            scope=resolver.scope,
+            args=args,
+            kwargs=kwargs,
+            resolver=resolver,
+            required=context.required,
+            registered=resolver.registered,
         )
-
-    def _get_resolver_from_call_args(
-        self,
-        context: InjectionContext,
-        call_args: ResolverCallArgs[..., Any],
-    ) -> ServiceResolver[..., Any]:
-        if isinstance(call_args.resolver, ServiceResolverFactory):
-            return call_args.resolver.__with_context__(context)
-        return call_args.resolver

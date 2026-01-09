@@ -1,18 +1,54 @@
 import inspect
+from typing import Any, override
 
-from peritype import FWrap, TWrap, wrap_func
+from peritype import TWrap
 
 from soupape.errors import ServiceNotFoundError
 from soupape.instances import InstancePoolStack
+from soupape.resolvers import ServiceResolver
+from soupape.resolvers.utils import empty_func_w
+from soupape.types import InjectionContext, InjectionScope, ResolveFunction
 
 
-def _empty_func() -> None: ...
+class InstantiatedResolverContainer[**P, T](ServiceResolver[P, T]):
+    def __init__(self, interface: TWrap[T], implementation: TWrap[Any]) -> None:
+        self._interface = interface
+        self._implementation = implementation
+
+    @property
+    @override
+    def name(self) -> str:
+        return str(self._interface)
+
+    @property
+    @override
+    def scope(self) -> InjectionScope:
+        return InjectionScope.IMMEDIATE
+
+    @property
+    @override
+    def required(self) -> TWrap[T]:
+        return self._interface
+
+    @property
+    @override
+    def registered(self) -> TWrap[Any]:
+        return self._implementation
+
+    @override
+    def get_resolve_hints(self, **kwargs: Any) -> dict[str, TWrap[Any]]:
+        return {}
+
+    @override
+    def get_resolve_signature(self) -> inspect.Signature:
+        return empty_func_w.signature
+
+    @override
+    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[P, T]:
+        return _InstantiatedResolver[T](context.injector.instances, self._implementation)  # pyright: ignore[reportReturnType]
 
 
-_empty_func_w = wrap_func(_empty_func)
-
-
-class InstantiatedServiceResolver[T]:
+class _InstantiatedResolver[T]:
     def __init__(self, instances: InstancePoolStack, tw: TWrap[T]) -> None:
         self._instances = instances
         self._type = tw
@@ -21,11 +57,3 @@ class InstantiatedServiceResolver[T]:
         if self._type not in self._instances:
             raise ServiceNotFoundError(str(self._type))
         return self._instances.get_instance(self._type)
-
-    @staticmethod
-    def get_empty_signature() -> inspect.Signature:
-        return _empty_func_w.signature
-
-    @staticmethod
-    def get_empty_func() -> FWrap[[], None]:
-        return _empty_func_w

@@ -6,21 +6,27 @@ from peritype import FWrap, TWrap, wrap_func, wrap_type
 from peritype.collections import TypeBag, TypeMap
 
 from soupape.errors import ServiceNotFoundError
-from soupape.resolvers import DefaultResolverFactory
-from soupape.types import InjectionScope, ServiceResolver, TypeResolverMetadata
+from soupape.resolvers import (
+    DefaultResolverContainer,
+    FunctionResolverContainer,
+    ServiceResolver,
+)
+from soupape.types import InjectionScope, ResolveFunction
 from soupape.utils import is_type_like
 
 
 class ServiceCollection:
     def __init__(self) -> None:
         self._registered_services = TypeBag()
-        self._resolvers = TypeMap[Any, TypeResolverMetadata[..., Any]]()
+        self._resolvers = TypeMap[Any, ServiceResolver[..., Any]]()
 
-    def _add_resolver(self, metadata: TypeResolverMetadata[..., Any]) -> None:
-        if metadata.interface in self._registered_services:
-            raise ValueError(f"Service resolver for type {metadata.interface} is already registered.")
-        self._registered_services.add(metadata.interface)
-        self._resolvers.add(metadata.interface, metadata)
+    def add_resolver(self, resolver: ServiceResolver[..., Any]) -> None:
+        if resolver.required is None:
+            raise ValueError("Service resolver must have a required type.")
+        if resolver.required in self._registered_services:
+            raise ValueError(f"Service resolver for type {resolver.required} is already registered.")
+        self._registered_services.add(resolver.required)
+        self._resolvers.add(resolver.required, resolver)
 
     def _unpack_resolver_function_return(self, func: FWrap[..., Any]) -> TWrap[Any]:
         original = func.func
@@ -41,65 +47,54 @@ class ServiceCollection:
         self,
         scope: InjectionScope,
         args: tuple[Any, ...],
-    ) -> TypeResolverMetadata[..., Any]:
+    ) -> ServiceResolver[..., Any]:
         implementation: type[Any] | None = None
         interface: type[Any] | None = None
         match args:
             case (arg1,) if is_type_like(arg1):
                 interface = arg1
                 implementation = arg1
-                resolver = None
+                func_resolver = None
             case (arg1, arg2) if is_type_like(arg1) and is_type_like(arg2):
                 interface = arg1
                 implementation = arg2
-                resolver = None
+                func_resolver = None
             case (arg1,) if callable(arg1):
                 interface = None
                 implementation = None
-                resolver = arg1
+                func_resolver = arg1
             case (arg1, arg2) if callable(arg1) and is_type_like(arg2):
                 interface = arg2
                 implementation = None
-                resolver = arg1
+                func_resolver = arg1
             case _:
                 raise TypeError()
 
-        if resolver is not None:
-            if inspect.ismethod(resolver) or inspect.isfunction(resolver):
-                fwrap = wrap_func(resolver)
+        if func_resolver is not None:
+            if inspect.ismethod(func_resolver) or inspect.isfunction(func_resolver):
+                fwrap = wrap_func(func_resolver)
             else:
-                fwrap = wrap_func(resolver.__call__)
-            resolver_return = self._unpack_resolver_function_return(fwrap)
+                fwrap = wrap_func(func_resolver.__call__)
+            func_resolver_return = self._unpack_resolver_function_return(fwrap)
             if interface is None:
-                wrap_interface = resolver_return
-                wrap_implementation = resolver_return
+                interface_w = func_resolver_return
+                implementation_w = func_resolver_return
             else:
-                wrap_interface = wrap_type(interface)
-                wrap_implementation = resolver_return
-            signature = fwrap.signature
-        else:
-            assert implementation is not None and interface is not None
-            wrap_interface = wrap_type(interface)
-            wrap_implementation = wrap_type(implementation)
-            resolver = DefaultResolverFactory(self, wrap_interface, wrap_implementation)
-            signature = wrap_implementation.signature
-            fwrap = wrap_interface.init
+                interface_w = wrap_type(interface)
+                implementation_w = func_resolver_return
+            return FunctionResolverContainer(scope, fwrap, required=interface_w, registered=implementation_w)
 
-        return TypeResolverMetadata(
-            scope=scope,
-            interface=wrap_interface,
-            implementation=wrap_implementation,
-            resolver=resolver,
-            signature=signature,
-            fwrap=fwrap,
-        )
+        assert implementation is not None and interface is not None
+        interface_w = wrap_type(interface)
+        implementation_w = wrap_type(implementation)
+        return DefaultResolverContainer(scope, interface_w, implementation_w)
 
     def is_registered[T](self, interface: type[T] | TWrap[T]) -> bool:
         if not isinstance(interface, TWrap):
             interface = wrap_type(interface)
         return interface in self._registered_services or self._registered_services.contains_matching(interface)
 
-    def get_metadata[T](self, interface: type[T] | TWrap[T]) -> TypeResolverMetadata[..., T]:
+    def get_resolver[T](self, interface: type[T] | TWrap[T]) -> ServiceResolver[..., T]:
         if not isinstance(interface, TWrap):
             interface = wrap_type(interface)
         if interface in self._registered_services:
@@ -115,39 +110,39 @@ class ServiceCollection:
     @overload
     def add_singleton[ImplT](self, implementation: type[ImplT], /) -> None: ...
     @overload
-    def add_singleton[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], /) -> None: ...
+    def add_singleton[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], /) -> None: ...
     @overload
-    def add_singleton[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], interface: type[IntrT], /) -> None: ...
+    def add_singleton[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], interface: type[IntrT], /) -> None: ...
 
     def add_singleton(self, *args: Any) -> None:
-        metadata = self._unpack_registration_args(InjectionScope.SINGLETON, args)
-        self._add_resolver(metadata)
+        resolver = self._unpack_registration_args(InjectionScope.SINGLETON, args)
+        self.add_resolver(resolver)
 
     @overload
     def add_scoped[IntrT, ImplT](self, interface: type[IntrT], implementation: type[ImplT], /) -> None: ...
     @overload
     def add_scoped[ImplT](self, implementation: type[ImplT], /) -> None: ...
     @overload
-    def add_scoped[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], /) -> None: ...
+    def add_scoped[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], /) -> None: ...
     @overload
-    def add_scoped[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], interface: type[IntrT], /) -> None: ...
+    def add_scoped[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], interface: type[IntrT], /) -> None: ...
 
     def add_scoped(self, *args: Any) -> None:
-        metadata = self._unpack_registration_args(InjectionScope.SCOPED, args)
-        self._add_resolver(metadata)
+        resolver = self._unpack_registration_args(InjectionScope.SCOPED, args)
+        self.add_resolver(resolver)
 
     @overload
     def add_transient[IntrT, ImplT](self, interface: type[IntrT], implementation: type[ImplT], /) -> None: ...
     @overload
     def add_transient[ImplT](self, implementation: type[ImplT], /) -> None: ...
     @overload
-    def add_transient[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], /) -> None: ...
+    def add_transient[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], /) -> None: ...
     @overload
-    def add_transient[**P, IntrT](self, resolver: ServiceResolver[P, IntrT], interface: type[IntrT], /) -> None: ...
+    def add_transient[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], interface: type[IntrT], /) -> None: ...
 
     def add_transient(self, *args: Any) -> None:
-        metadata = self._unpack_registration_args(InjectionScope.TRANSIENT, args)
-        self._add_resolver(metadata)
+        resolver = self._unpack_registration_args(InjectionScope.TRANSIENT, args)
+        self.add_resolver(resolver)
 
     def copy(self) -> "ServiceCollection":
         new_collection = ServiceCollection()
