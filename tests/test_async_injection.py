@@ -27,8 +27,8 @@ async def test_simple_injection() -> None:
 
     services.add_singleton(TestService)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(TestService)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(TestService)
 
     assert service.greet() == "Hello, World!"
 
@@ -57,9 +57,9 @@ async def test_fail_service_not_found() -> None:
         def greet(self) -> str:
             return "Hello, World!"
 
-    injector = AsyncInjector(services)
-    with pytest.raises(ServiceNotFoundError):
-        await injector.require(TestService)
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(ServiceNotFoundError):
+            await injector.require(TestService)
 
 
 @pytest.mark.asyncio
@@ -69,9 +69,9 @@ async def test_fail_generic_service_not_found() -> None:
     services = ServiceCollection()
     services.add_singleton(Service[int])
 
-    injector = AsyncInjector(services)
-    with pytest.raises(ServiceNotFoundError):
-        await injector.require(Service[str])
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(ServiceNotFoundError):
+            await injector.require(Service[str])
 
 
 @pytest.mark.asyncio
@@ -95,8 +95,8 @@ async def test_simple_injection_in_service() -> None:
     services.add_singleton(BaseService)
     services.add_singleton(TestService)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(TestService)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(TestService)
 
     assert service.greet() == "Hello, World!"
 
@@ -117,8 +117,8 @@ async def test_inject_with_async_resolver() -> None:
 
     services.add_singleton(async_service_resolver)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(AsyncService)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(AsyncService)
 
     data = await service.fetch_data()
     assert data == "Async Data"
@@ -140,8 +140,8 @@ async def test_inject_with_catch_all_resolver() -> None:
 
     services.add_singleton(async_service_resolver)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(AsyncService[int])
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(AsyncService[int])
 
     data = await service.fetch_data()
     assert data == "Async Data"
@@ -171,8 +171,8 @@ async def test_inject_resolver_with_params() -> None:
     services.add_singleton(BaseService)
     services.add_singleton(service_resolver)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(Service)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service)
 
     data = service.greet()
     assert data == "Hello, World!"
@@ -187,9 +187,9 @@ async def test_inject_service_twice() -> None:
 
     services.add_singleton(AsyncService)
 
-    injector = AsyncInjector(services)
-    service1 = await injector.require(AsyncService)
-    service2 = await injector.require(AsyncService)
+    async with AsyncInjector(services) as injector:
+        service1 = await injector.require(AsyncService)
+        service2 = await injector.require(AsyncService)
 
     assert service1 is service2
 
@@ -206,9 +206,9 @@ async def test_inject_with_async_resolver_twice() -> None:
 
     services.add_singleton(async_service_resolver)
 
-    injector = AsyncInjector(services)
-    service1 = await injector.require(AsyncService)
-    service2 = await injector.require(AsyncService)
+    async with AsyncInjector(services) as injector:
+        service1 = await injector.require(AsyncService)
+        service2 = await injector.require(AsyncService)
 
     assert service1 is service2
 
@@ -228,9 +228,9 @@ async def test_inject_with_async_resolver_custom_interface() -> None:
     services.add_singleton(async_service_resolver)
     services.add_singleton(async_service_resolver, BaseService)
 
-    injector = AsyncInjector(services)
-    service1 = await injector.require(AsyncService)
-    service2 = await injector.require(BaseService)
+    async with AsyncInjector(services) as injector:
+        service1 = await injector.require(AsyncService)
+        service2 = await injector.require(BaseService)
 
     assert service1 is service2
     assert isinstance(service1, AsyncService)
@@ -253,9 +253,9 @@ async def test_inject_scoped_with_async_resolver() -> None:
 
     services.add_scoped(async_service_resolver)
 
-    injector = AsyncInjector(services)
-    scoped = injector.get_scoped_injector()
-    service = await scoped.require(AsyncService)
+    async with AsyncInjector(services) as injector:
+        scoped = injector.get_scoped_injector()
+        service = await scoped.require(AsyncService)
 
     data = await service.fetch_data()
     assert data == "Async Data"
@@ -271,10 +271,14 @@ async def test_fail_inject_scoped_in_root_injector() -> None:
 
     services.add_scoped(ScopedService)
 
-    injector = AsyncInjector(services)
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(ScopedServiceNotAvailableError) as exc_info:
+            await injector.require(ScopedService)
 
-    with pytest.raises(ScopedServiceNotAvailableError) as exc_info:
-        await injector.require(ScopedService)
+    assert exc_info.value.code == "soupape.scoped_service.not_available"
+    assert exc_info.value.message == (
+        f"Scoped service for interface '{ScopedService.__qualname__}' is not available in the root scope."
+    )
 
     assert exc_info.value.code == "soupape.scoped_service.not_available"
     assert exc_info.value.message == (
@@ -293,10 +297,10 @@ async def test_inject_scoped_with_async_resolver_twice() -> None:
 
     services.add_scoped(async_service_resolver)
 
-    injector = AsyncInjector(services)
-    scoped = injector.get_scoped_injector()
-    service1 = await scoped.require(AsyncService)
-    service2 = await scoped.require(AsyncService)
+    async with AsyncInjector(services) as injector:
+        scoped = injector.get_scoped_injector()
+        service1 = await scoped.require(AsyncService)
+        service2 = await scoped.require(AsyncService)
 
     assert service1 is service2
 
@@ -317,9 +321,9 @@ async def test_inject_transient_with_async_resolver() -> None:
 
     services.add_transient(async_service_resolver)
 
-    injector = AsyncInjector(services)
-    scoped = injector.get_scoped_injector()
-    service = await scoped.require(AsyncService)
+    async with AsyncInjector(services) as injector:
+        scoped = injector.get_scoped_injector()
+        service = await scoped.require(AsyncService)
 
     data = await service.fetch_data()
     assert data == "Async Data"
@@ -336,10 +340,10 @@ async def test_inject_transient_with_async_resolver_twice() -> None:
 
     services.add_transient(async_service_resolver)
 
-    injector = AsyncInjector(services)
-    scoped = injector.get_scoped_injector()
-    service1 = await scoped.require(AsyncService)
-    service2 = await scoped.require(AsyncService)
+    async with AsyncInjector(services) as injector:
+        scoped = injector.get_scoped_injector()
+        service1 = await scoped.require(AsyncService)
+        service2 = await scoped.require(AsyncService)
 
     assert service1 is not service2
 
@@ -357,12 +361,12 @@ async def test_call_async_function_with_injected_dependencies() -> None:
 
     services.add_singleton(DependencyService)
 
-    injector = AsyncInjector(services)
+    async with AsyncInjector(services) as injector:
 
-    async def test_function(dep_service: DependencyService) -> str:
-        return dep_service.get_value()
+        async def test_function(dep_service: DependencyService) -> str:
+            return dep_service.get_value()
 
-    result = await injector.call(test_function)
+        result = await injector.call(test_function)
     assert result == "Injected Value"
 
 
@@ -379,12 +383,12 @@ async def test_call_sync_function_with_injected_dependencies() -> None:
 
     services.add_singleton(DependencyService)
 
-    injector = AsyncInjector(services)
+    async with AsyncInjector(services) as injector:
 
-    def test_function(dep_service: DependencyService) -> str:
-        return dep_service.get_value()
+        def test_function(dep_service: DependencyService) -> str:
+            return dep_service.get_value()
 
-    result = await injector.call(test_function)
+        result = await injector.call(test_function)
     assert result == "Injected Value"
 
 
@@ -398,9 +402,9 @@ async def test_inject_singleton_twice() -> None:
 
     services.add_singleton(SingletonService)
 
-    injector = AsyncInjector(services)
-    instance1 = await injector.require(SingletonService)
-    instance2 = await injector.require(SingletonService)
+    async with AsyncInjector(services) as injector:
+        instance1 = await injector.require(SingletonService)
+        instance2 = await injector.require(SingletonService)
 
     assert instance1 is instance2
 
@@ -414,9 +418,11 @@ async def test_inject_scoped_twice() -> None:
             pass
 
     services.add_scoped(ScopedService)
-    injector = AsyncInjector(services).get_scoped_injector()
-    instance1 = await injector.require(ScopedService)
-    instance2 = await injector.require(ScopedService)
+
+    async with AsyncInjector(services) as root:
+        injector = root.get_scoped_injector()
+        instance1 = await injector.require(ScopedService)
+        instance2 = await injector.require(ScopedService)
 
     assert instance1 is instance2
 
@@ -430,9 +436,10 @@ async def test_inject_transient() -> None:
             pass
 
     services.add_transient(TransientService)
-    injector = AsyncInjector(services)
-    instance1 = await injector.require(TransientService)
-    instance2 = await injector.require(TransientService)
+
+    async with AsyncInjector(services) as injector:
+        instance1 = await injector.require(TransientService)
+        instance2 = await injector.require(TransientService)
 
     assert instance1 is not instance2
 
@@ -446,11 +453,12 @@ async def test_inject_scoped_twice_in_different_sessions() -> None:
             pass
 
     services.add_scoped(ScopedService)
-    injector = AsyncInjector(services)
-    scoped1 = injector.get_scoped_injector()
-    scoped2 = injector.get_scoped_injector()
-    instance1 = await scoped1.require(ScopedService)
-    instance2 = await scoped2.require(ScopedService)
+
+    async with AsyncInjector(services) as injector:
+        scoped1 = injector.get_scoped_injector()
+        scoped2 = injector.get_scoped_injector()
+        instance1 = await scoped1.require(ScopedService)
+        instance2 = await scoped2.require(ScopedService)
 
     assert instance1 is not instance2
 
@@ -464,11 +472,12 @@ async def test_inject_singleton_in_different_scopes() -> None:
             pass
 
     services.add_singleton(SingletonService)
-    injector = AsyncInjector(services)
-    scoped1 = injector.get_scoped_injector()
-    scoped2 = injector.get_scoped_injector()
-    instance1 = await scoped1.require(SingletonService)
-    instance2 = await scoped2.require(SingletonService)
+
+    async with AsyncInjector(services) as injector:
+        scoped1 = injector.get_scoped_injector()
+        scoped2 = injector.get_scoped_injector()
+        instance1 = await scoped1.require(SingletonService)
+        instance2 = await scoped2.require(SingletonService)
 
     assert instance1 is instance2
 
@@ -481,10 +490,9 @@ async def test_fail_inject_unregistered_service() -> None:
         def __init__(self) -> None:
             pass
 
-    injector = AsyncInjector(services)
-
-    with pytest.raises(ServiceNotFoundError):
-        await injector.require(UnregisteredService)
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(ServiceNotFoundError):
+            await injector.require(UnregisteredService)
 
 
 @pytest.mark.asyncio
@@ -500,10 +508,10 @@ async def test_fail_inject_unregistered_service_in_dependency() -> None:
             self.unreg_service = unreg_service
 
     services.add_singleton(DependentService)
-    injector = AsyncInjector(services)
 
-    with pytest.raises(ServiceNotFoundError):
-        await injector.require(DependentService)
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(ServiceNotFoundError):
+            await injector.require(DependentService)
 
 
 @pytest.mark.asyncio
@@ -520,10 +528,10 @@ async def test_fail_missing_type_hint_in_dependency() -> None:
 
     services.add_singleton(DependencyService)
     services.add_singleton(ServiceWithoutTypeHint)
-    injector = AsyncInjector(services)
 
-    with pytest.raises(MissingTypeHintError) as exc_info:
-        await injector.require(ServiceWithoutTypeHint)
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(MissingTypeHintError) as exc_info:
+            await injector.require(ServiceWithoutTypeHint)
 
     assert exc_info.value.code == "soupape.type_hint.missing"
     assert exc_info.value.message == (
@@ -540,13 +548,14 @@ async def test_fail_missing_type_hint_in_function_call() -> None:
             pass
 
     services.add_singleton(DependencyService)
-    injector = AsyncInjector(services)
 
-    def function_without_type_hint(dep_service):  # type: ignore
-        return dep_service  # type: ignore
+    async with AsyncInjector(services) as injector:
 
-    with pytest.raises(MissingTypeHintError) as exc_info:
-        await injector.call(function_without_type_hint)  # type: ignore
+        def function_without_type_hint(dep_service):  # type: ignore
+            return dep_service  # type: ignore
+
+        with pytest.raises(MissingTypeHintError) as exc_info:
+            await injector.call(function_without_type_hint)  # type: ignore
 
     assert exc_info.value.code == "soupape.type_hint.missing"
     assert exc_info.value.message == (
@@ -576,8 +585,8 @@ async def test_inject_service_with_positional_only_parameter() -> None:
 
     services.add_singleton(ServiceWithPositionalOnly)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(ServiceWithPositionalOnly)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(ServiceWithPositionalOnly)
 
     assert service.greet() == "Hello from Positional!"
 
@@ -604,8 +613,8 @@ async def test_inject_service_with_keyword_only_parameter() -> None:
 
     services.add_singleton(ServiceWithKeywordOnly)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(ServiceWithKeywordOnly)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(ServiceWithKeywordOnly)
 
     assert service.greet() == "Hello from Keyword!"
 
@@ -624,8 +633,8 @@ async def test_inject_with_post_init() -> None:
 
     services.add_singleton(TestService)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(TestService)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(TestService)
 
     assert service.initialized is True
 
@@ -652,8 +661,8 @@ async def test_inject_with_inherited_post_init() -> None:
 
     services.add_singleton(TestService)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(TestService)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(TestService)
 
     assert service.numbers == [1, 2]
 
@@ -673,8 +682,8 @@ async def test_inject_with_async_post_init() -> None:
 
     services.add_singleton(TestService)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(TestService)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(TestService)
 
     assert service.initialized is True
 
@@ -697,8 +706,8 @@ async def test_inject_post_init_with_args() -> None:
     services.add_singleton(OtherService)
     services.add_singleton(TestService)
 
-    injector = AsyncInjector(services)
-    service = await injector.require(TestService)
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(TestService)
 
     assert service.initialized == 42
 
@@ -720,8 +729,8 @@ async def test_inject_async_yield_resolver() -> None:
 
     services.add_singleton(resource_resolver)
 
-    injector = AsyncInjector(services)
-    resource = await injector.require(Resource)
+    async with AsyncInjector(services) as injector:
+        resource = await injector.require(Resource)
 
     assert resource.active is True
 
@@ -743,8 +752,8 @@ async def test_inject_yield_resolver() -> None:
 
     services.add_singleton(resource_resolver)
 
-    injector = AsyncInjector(services)
-    resource = await injector.require(Resource)
+    async with AsyncInjector(services) as injector:
+        resource = await injector.require(Resource)
 
     assert resource.active is True
 
