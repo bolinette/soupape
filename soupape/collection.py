@@ -63,10 +63,10 @@ class ServiceCollection:
                 interface = None
                 implementation = None
                 func_resolver = arg1
-            case (arg1, arg2) if callable(arg1) and is_type_like(arg2):
-                interface = arg2
+            case (arg1, arg2) if is_type_like(arg1) and callable(arg2):
+                interface = arg1
                 implementation = None
-                func_resolver = arg1
+                func_resolver = arg2
             case _:
                 raise TypeError()
 
@@ -112,7 +112,7 @@ class ServiceCollection:
     @overload
     def add_singleton[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], /) -> None: ...
     @overload
-    def add_singleton[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], interface: type[IntrT], /) -> None: ...
+    def add_singleton[**P, IntrT](self, interface: type[IntrT], resolver: ResolveFunction[P, IntrT], /) -> None: ...
 
     def add_singleton(self, *args: Any) -> None:
         resolver = self._unpack_registration_args(InjectionScope.SINGLETON, args)
@@ -125,7 +125,7 @@ class ServiceCollection:
     @overload
     def add_scoped[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], /) -> None: ...
     @overload
-    def add_scoped[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], interface: type[IntrT], /) -> None: ...
+    def add_scoped[**P, IntrT](self, interface: type[IntrT], resolver: ResolveFunction[P, IntrT], /) -> None: ...
 
     def add_scoped(self, *args: Any) -> None:
         resolver = self._unpack_registration_args(InjectionScope.SCOPED, args)
@@ -138,7 +138,7 @@ class ServiceCollection:
     @overload
     def add_transient[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], /) -> None: ...
     @overload
-    def add_transient[**P, IntrT](self, resolver: ResolveFunction[P, IntrT], interface: type[IntrT], /) -> None: ...
+    def add_transient[**P, IntrT](self, interface: type[IntrT], resolver: ResolveFunction[P, IntrT], /) -> None: ...
 
     def add_transient(self, *args: Any) -> None:
         resolver = self._unpack_registration_args(InjectionScope.TRANSIENT, args)

@@ -226,7 +226,7 @@ async def test_inject_with_async_resolver_custom_interface() -> None:
         return AsyncService()
 
     services.add_singleton(async_service_resolver)
-    services.add_singleton(async_service_resolver, BaseService)
+    services.add_singleton(BaseService, async_service_resolver)
 
     async with AsyncInjector(services) as injector:
         service1 = await injector.require(AsyncService)

@@ -6,7 +6,6 @@ from typing import Any, override
 from peritype import TWrap
 
 from soupape.errors import AsyncInSyncInjectorError
-from soupape.metadata import meta
 from soupape.post_init import PostInitMetadata
 from soupape.resolvers import ServiceResolver
 from soupape.types import (
@@ -16,6 +15,7 @@ from soupape.types import (
     ResolveFunction,
     SyncContextManager,
 )
+from soupape.utils import meta
 
 
 class DefaultResolverContainer[**P, T](ServiceResolver[P, T]):
