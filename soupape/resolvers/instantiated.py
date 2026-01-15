@@ -1,16 +1,15 @@
 import inspect
 from typing import Any, override
 
-from peritype import TWrap
+from peritype import FWrap, TWrap
 
 from soupape.errors import ServiceNotFoundError
 from soupape.instances import InstancePoolStack
 from soupape.resolvers import ServiceResolver
-from soupape.resolvers.utils import empty_func_w
 from soupape.types import InjectionContext, InjectionScope, ResolveFunction
 
 
-class InstantiatedResolverContainer[**P, T](ServiceResolver[P, T]):
+class InstantiatedResolverContainer[T](ServiceResolver[[], T]):
     def __init__(self, interface: TWrap[T], implementation: TWrap[Any]) -> None:
         self._interface = interface
         self._implementation = implementation
@@ -40,11 +39,15 @@ class InstantiatedResolverContainer[**P, T](ServiceResolver[P, T]):
         return {}
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
-        return empty_func_w.signature
+    def get_instance_function(self) -> FWrap[[], T]:
+        return self._empty_resolver_w
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[P, T]:
+    def get_resolve_signature(self) -> inspect.Signature:
+        return self._empty_resolver_w.signature
+
+    @override
+    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[[], T]:
         return _InstantiatedResolver[T](context.injector.instances, self._implementation)  # pyright: ignore[reportReturnType]
 
 

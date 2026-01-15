@@ -14,6 +14,7 @@ from soupape.types import (
     Injector,
     InjectorCallArgs,
 )
+from soupape.utils import CircularGuard
 
 
 class AsyncInjector(BaseInjector, Injector):
@@ -55,17 +56,19 @@ class AsyncInjector(BaseInjector, Injector):
         context: InjectionContext,
         dep_node: DependencyTreeNode[..., T],
     ) -> T:
+        context.circular_guard.enter(dep_node.resolver.get_instance_function())
+
         resolved_args: list[Any] = []
         if context.positional_args is not None:
             for arg in context.positional_args:
                 resolved_args.append(arg)
         for arg in dep_node.args:
-            resolved_arg = await self._resolve_service(context.copy(dep_node.scope, arg.required), arg)
+            resolved_arg = await self._resolve_service(context.new_required(dep_node.scope, arg.required), arg)
             resolved_args.append(resolved_arg)
 
         resolved_kwargs: dict[str, Any] = {}
         for kwarg_name, kwarg in dep_node.kwargs.items():
-            resolved_kwarg = await self._resolve_service(context.copy(dep_node.scope, kwarg.required), kwarg)
+            resolved_kwarg = await self._resolve_service(context.new_required(dep_node.scope, kwarg.required), kwarg)
             resolved_kwargs[kwarg_name] = resolved_kwarg
 
         resolver = dep_node.resolver.get_resolve_func(context)
@@ -90,13 +93,18 @@ class AsyncInjector(BaseInjector, Injector):
             twrap = wrap_type(interface)
         else:
             twrap = interface
-        return await self._require(twrap)
+        return await self._require(twrap, CircularGuard())
 
-    async def _require[T](self, interface: TWrap[T]) -> T:
+    async def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T:
         resolver = self._get_service_resolver(interface)
-        context = self._get_injection_context(interface, resolver.scope, interface)
-        dep_node = self._build_dependency_tree(context, resolver)
-        resolved = await self._resolve_service(context, dep_node)
+        context = self._get_injection_context(
+            interface,
+            resolver.scope,
+            circular_guard,
+            required=interface,
+        )
+        dep_node = self._build_dependency_tree(context.copy(), resolver)
+        resolved = await self._resolve_service(context.copy(), dep_node)
         return resolved
 
     @overload
@@ -136,11 +144,12 @@ class AsyncInjector(BaseInjector, Injector):
         context = self._get_injection_context(
             kwargs.get("origin"),
             InjectionScope.IMMEDIATE,
+            circular_guard=kwargs.get("circular_guard"),
             positional_args=kwargs.get("positional_args"),
         )
         resolver = FunctionResolverContainer(InjectionScope.IMMEDIATE, fwrap)
-        dep_node = self._build_dependency_tree(context, resolver)
-        return await self._resolve_service(context, dep_node)
+        dep_node = self._build_dependency_tree(context.copy(), resolver)
+        return await self._resolve_service(context.copy(), dep_node)
 
     def get_scoped_injector(self) -> "AsyncInjector":
         return AsyncInjector(self._services, self._instance_pool.stack())

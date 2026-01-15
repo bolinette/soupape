@@ -46,6 +46,10 @@ class FunctionResolverContainer[**P, T](ServiceResolver[P, T]):
         return self._func.get_signature_hints(belongs_to=belongs_to)
 
     @override
+    def get_instance_function(self) -> FWrap[P, T]:
+        return self._func
+
+    @override
     def get_resolve_signature(self) -> inspect.Signature:
         return self._func.signature
 

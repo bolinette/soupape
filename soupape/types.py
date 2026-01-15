@@ -7,6 +7,7 @@ from typing import Any, NotRequired, Protocol, TypedDict, Unpack, runtime_checka
 from peritype import FWrap, TWrap
 
 from soupape.instances import InstancePoolStack
+from soupape.utils import CircularGuard
 
 type ResolveFunction[**P, T] = (
     Callable[P, T]
@@ -22,6 +23,7 @@ type ResolveFunction[**P, T] = (
 class InjectorCallArgs(TypedDict):
     positional_args: NotRequired[list[Any]]
     origin: NotRequired[TWrap[Any] | None]
+    circular_guard: NotRequired[CircularGuard]
 
 
 class Injector(Protocol):
@@ -50,26 +52,39 @@ class InjectionScope(Enum):
     IMMEDIATE = auto()
 
 
-@dataclass
+@dataclass(kw_only=True)
 class InjectionContext:
     injector: Injector
     origin: TWrap[Any] | None
     scope: "InjectionScope"
+    circular_guard: CircularGuard
     required: TWrap[Any] | None
     positional_args: list[Any] | None = None
 
-    def copy(
+    def new_required(
         self,
         scope: "InjectionScope",
-        required: TWrap[Any] | None = None,
-        positional_args: list[Any] | None = None,
+        required: TWrap[Any] | None,
     ) -> "InjectionContext":
         return InjectionContext(
             injector=self.injector,
             origin=self.origin,
             scope=scope,
+            circular_guard=self.circular_guard.copy(),
             required=required,
-            positional_args=positional_args,
+            positional_args=None,
+        )
+
+    def copy(
+        self,
+    ) -> "InjectionContext":
+        return InjectionContext(
+            injector=self.injector,
+            origin=self.origin,
+            scope=self.scope,
+            circular_guard=self.circular_guard.copy(),
+            required=self.required,
+            positional_args=self.positional_args,
         )
 
 

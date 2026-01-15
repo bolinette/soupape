@@ -3,7 +3,7 @@ import inspect
 from collections.abc import AsyncGenerator, Callable, Generator, Iterable
 from typing import Any, override
 
-from peritype import TWrap
+from peritype import FWrap, TWrap
 
 from soupape.errors import AsyncInSyncInjectorError
 from soupape.post_init import PostInitMetadata
@@ -54,6 +54,10 @@ class DefaultResolverContainer[**P, T](ServiceResolver[P, T]):
         return self._implementation.init.get_signature_hints(belongs_to=belongs_to)
 
     @override
+    def get_instance_function(self) -> FWrap[P, T]:
+        return self._implementation.init
+
+    @override
     def get_resolve_signature(self) -> inspect.Signature:
         return self._implementation.signature
 
@@ -88,6 +92,7 @@ class _AsyncServiceDefaultResolver[**P, T]:
                 post_init,
                 positional_args=[instance],
                 origin=self._context.origin,
+                circular_guard=self._context.circular_guard.copy(),
             )
             if asyncio.iscoroutine(result):
                 await result
@@ -116,6 +121,7 @@ class _SyncServiceDefaultResolver[**P, T]:
                 post_init,
                 positional_args=[instance],
                 origin=self._context.origin,
+                circular_guard=self._context.circular_guard.copy(),
             )
             if asyncio.iscoroutine(result):
                 raise AsyncInSyncInjectorError(result)

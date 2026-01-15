@@ -1,13 +1,14 @@
 import asyncio
 from collections.abc import AsyncGenerator, Generator
 from types import TracebackType
-from typing import Any
+from typing import Any, Protocol
 
 import pytest
 from peritype import TWrap, wrap_type
 
 from soupape import AsyncInjector, Injector, ServiceCollection, post_init
 from soupape.errors import (
+    CircularDependencyError,
     MissingTypeHintError,
     ScopedServiceNotAvailableError,
     ServiceNotFoundError,
@@ -145,6 +146,70 @@ async def test_inject_with_catch_all_resolver() -> None:
 
     data = await service.fetch_data()
     assert data == "Async Data"
+
+
+@pytest.mark.asyncio
+async def test_inject_with_catch_all_interface() -> None:
+    services = ServiceCollection()
+
+    class Service[T](Protocol):
+        async def fetch_data(self) -> str: ...
+
+    class Service1[T]:
+        async def fetch_data(self) -> str:
+            return "Service1 Data"
+
+    class Service2[T]:
+        async def fetch_data(self) -> str:
+            return "Service2 Data"
+
+    services.add_singleton(Service[Any], Service1)
+    services.add_singleton(Service[str], Service2)
+
+    async with AsyncInjector(services) as injector:
+        service1 = await injector.require(Service[int])
+        service2 = await injector.require(Service[str])
+
+    data1 = await service1.fetch_data()
+    data2 = await service2.fetch_data()
+    assert data1 == "Service1 Data"
+    assert data2 == "Service2 Data"
+
+
+@pytest.mark.asyncio
+async def test_register_partial_catch_all_resolver() -> None:
+    services = ServiceCollection()
+
+    class Service[T, U](Protocol):
+        async def fetch_data(self) -> str: ...
+
+    class Service1[T, U]:
+        async def fetch_data(self) -> str:
+            return "Service1 Data"
+
+    class Service2[T, U]:
+        async def fetch_data(self) -> str:
+            return "Service2 Data"
+
+    class Service3[T, U]:
+        async def fetch_data(self) -> str:
+            return "Service3 Data"
+
+    services.add_singleton(Service[int, Any], Service1)
+    services.add_singleton(Service[int, str], Service2)
+    services.add_singleton(Service[str, Any], Service3)
+
+    async with AsyncInjector(services) as injector:
+        service1 = await injector.require(Service[int, float])
+        service2 = await injector.require(Service[int, str])
+        service3 = await injector.require(Service[str, float])
+
+    data1 = await service1.fetch_data()
+    data2 = await service2.fetch_data()
+    data3 = await service3.fetch_data()
+    assert data1 == "Service1 Data"
+    assert data2 == "Service2 Data"
+    assert data3 == "Service3 Data"
 
 
 @pytest.mark.asyncio
@@ -956,3 +1021,108 @@ async def test_require_inherited_generic_twrap() -> None:
         assert service.tw1 == wrap_type(float)
         assert service.tw2 == wrap_type(str)
         assert service.tw3 == wrap_type(int)
+
+
+@pytest.mark.asyncio
+async def test_fail_circular_dependency() -> None:
+    services = ServiceCollection()
+
+    class ServiceA:
+        def __init__(self, service_b: "ServiceB") -> None:
+            self.service_b = service_b
+
+    class ServiceB:
+        def __init__(self, service_a: ServiceA) -> None:
+            self.service_a = service_a
+
+    # To avoid NameError for forward reference
+    # because these classes are defined inside a function
+    ServiceA.__init__.__globals__["ServiceB"] = ServiceB
+
+    services.add_singleton(ServiceA)
+    services.add_singleton(ServiceB)
+
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(CircularDependencyError) as exc_info:
+            await injector.require(ServiceA)
+
+    trace = exc_info.value.trace
+    assert len(trace) == 3
+    assert trace[0].__qualname__ == ServiceA.__init__.__qualname__
+    assert trace[1].__qualname__ == ServiceB.__init__.__qualname__
+    assert trace[2].__qualname__ == ServiceA.__init__.__qualname__
+
+
+@pytest.mark.asyncio
+async def test_fail_circular_dependency_3_services() -> None:
+    services = ServiceCollection()
+
+    class ServiceA:
+        def __init__(self, service_b: "ServiceB") -> None:
+            self.service_b = service_b
+
+    class ServiceB:
+        def __init__(self, service_c: "ServiceC") -> None:
+            self.service_c = service_c
+
+    class ServiceC:
+        def __init__(self, service_a: ServiceA) -> None:
+            self.service_a = service_a
+
+    # To avoid NameError for forward reference
+    # because these classes are defined inside a function
+    ServiceA.__init__.__globals__["ServiceB"] = ServiceB
+    ServiceB.__init__.__globals__["ServiceC"] = ServiceC
+
+    services.add_singleton(ServiceA)
+    services.add_singleton(ServiceB)
+    services.add_singleton(ServiceC)
+
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(CircularDependencyError) as exc_info:
+            await injector.require(ServiceA)
+
+    trace = exc_info.value.trace
+    assert len(trace) == 4
+    assert trace[0].__qualname__ == ServiceA.__init__.__qualname__
+    assert trace[1].__qualname__ == ServiceB.__init__.__qualname__
+    assert trace[2].__qualname__ == ServiceC.__init__.__qualname__
+    assert trace[3].__qualname__ == ServiceA.__init__.__qualname__
+
+
+@pytest.mark.asyncio
+async def test_fail_circular_dependency_in_post_init() -> None:
+    services = ServiceCollection()
+
+    class ServiceA:
+        def __init__(self) -> None:
+            self.resource: str | None = None
+
+        @post_init
+        async def setup(self, service_b: "ServiceB") -> None:
+            self.resource = await service_b.fetch_data()
+
+    class ServiceB:
+        def __init__(self, service_a: ServiceA) -> None:
+            self.service_a = service_a
+
+        async def fetch_data(self) -> str:
+            return "Data"
+
+    # To avoid NameError for forward reference
+    # because these classes are defined inside a function
+    ServiceA.__init__.__globals__["ServiceB"] = ServiceB
+
+    services.add_singleton(ServiceA)
+    services.add_singleton(ServiceB)
+
+    async with AsyncInjector(services) as injector:
+        with pytest.raises(CircularDependencyError) as exc_info:
+            await injector.require(ServiceA)
+
+    trace = exc_info.value.trace
+    assert len(trace) == 4
+    assert trace[0].__qualname__ == ServiceA.__init__.__qualname__
+    assert trace[1].__qualname__ == ServiceA.setup.__qualname__
+    assert trace[2].__qualname__ == ServiceB.__init__.__qualname__
+    assert trace[3].__qualname__ == ServiceA.__init__.__qualname__

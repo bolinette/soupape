@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterable, Awaitable
+from collections.abc import AsyncIterable, Awaitable, Callable, Sequence
 from typing import Any
 
 
@@ -44,3 +44,12 @@ class AsyncInSyncInjectorError(SoupapeError):
     async def close(self) -> None:
         if isinstance(self._coro, Awaitable):
             await self._coro
+
+
+class CircularDependencyError(SoupapeError):
+    def __init__(self, trace: Sequence[Callable[..., Any]]) -> None:
+        super().__init__(
+            "soupape.dependency.circular",
+            "Injection cycle detected.\n" + "\n ↳ ".join(f"{i + 1}. {func}" for i, func in enumerate(trace)),
+        )
+        self.trace = trace

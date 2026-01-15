@@ -18,6 +18,7 @@ from soupape.types import (
     InjectionScope,
     Injector,
 )
+from soupape.utils import CircularGuard
 
 
 class BaseInjector(Injector):
@@ -36,10 +37,18 @@ class BaseInjector(Injector):
         self,
         origin: TWrap[Any] | None,
         scope: InjectionScope,
+        circular_guard: CircularGuard | None = None,
         required: TWrap[Any] | None = None,
         positional_args: list[Any] | None = None,
     ) -> InjectionContext:
-        return InjectionContext(self, origin, scope, required, positional_args)
+        return InjectionContext(
+            injector=self,
+            origin=origin,
+            scope=scope,
+            required=required,
+            positional_args=positional_args,
+            circular_guard=circular_guard or CircularGuard(),
+        )
 
     @property
     def is_root_injector(self) -> bool:
@@ -79,9 +88,6 @@ class BaseInjector(Injector):
                 set_to_root = False
         self._instance_pool.set_instance(twrap, instance, root=set_to_root)
 
-    def _get_instance[InstanceT](self, twrap: TWrap[InstanceT]) -> InstanceT:
-        return self._instance_pool.get_instance(twrap)
-
     def _make_instantiated_resolver[T](
         self,
         interface: TWrap[T],
@@ -105,6 +111,8 @@ class BaseInjector(Injector):
         context: InjectionContext,
         resolver: ServiceResolver[..., Any],
     ) -> DependencyTreeNode[..., Any]:
+        context.circular_guard.enter(resolver.get_instance_function())
+
         args: list[DependencyTreeNode[..., Any]] = []
         kwargs: dict[str, DependencyTreeNode[..., Any]] = {}
         hints = resolver.get_resolve_hints(belongs_to=context.origin)
@@ -123,7 +131,7 @@ class BaseInjector(Injector):
             hint = hints[param_name]
             hint_resolver = self._get_service_resolver(hint)
             dep_node = self._build_dependency_tree(
-                context.copy(hint_resolver.scope, hint),
+                context.new_required(hint_resolver.scope, hint),
                 hint_resolver,
             )
             if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):

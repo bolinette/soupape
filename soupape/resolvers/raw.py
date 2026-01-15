@@ -1,10 +1,10 @@
 import inspect
 from typing import Any, override
 
-from peritype import TWrap
+from peritype import FWrap, TWrap
 
 from soupape.resolvers import ServiceResolver
-from soupape.resolvers.utils import empty_func_w, type_any_w, type_any_w_w
+from soupape.resolvers.utils import type_any_w, type_any_w_w
 from soupape.types import InjectionContext, InjectionScope, ResolveFunction
 
 
@@ -34,8 +34,12 @@ class RawTypeResolverContainer(ServiceResolver[[], type[Any]]):
         return {}
 
     @override
+    def get_instance_function(self) -> FWrap[[], type[Any]]:
+        return self._empty_resolver_w
+
+    @override
     def get_resolve_signature(self) -> inspect.Signature:
-        return empty_func_w.signature
+        return self._empty_resolver_w.signature
 
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., type[Any]]:
@@ -77,8 +81,12 @@ class WrappedTypeResolverContainer(ServiceResolver[[], TWrap[Any]]):
         return {}
 
     @override
+    def get_instance_function(self) -> FWrap[[], TWrap[Any]]:
+        return self._empty_resolver_w
+
+    @override
     def get_resolve_signature(self) -> inspect.Signature:
-        return empty_func_w.signature
+        return self._empty_resolver_w.signature
 
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., TWrap[Any]]:
