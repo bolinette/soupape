@@ -8,7 +8,9 @@ from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError,
 from soupape.instances import InstancePoolStack
 from soupape.resolvers import (
     DependencyTreeNode,
+    DictResolverContainer,
     InstantiatedResolverContainer,
+    ListResolverContainer,
     RawTypeResolverContainer,
     ServiceResolver,
     WrappedTypeResolverContainer,
@@ -32,6 +34,8 @@ class BaseInjector(Injector):
         if self.is_root_injector:
             self._services.add_resolver(RawTypeResolverContainer())
             self._services.add_resolver(WrappedTypeResolverContainer())
+            self._services.add_resolver(ListResolverContainer())
+            self._services.add_resolver(DictResolverContainer())
 
     def _get_injection_context(
         self,
@@ -57,6 +61,10 @@ class BaseInjector(Injector):
     @property
     def instances(self) -> InstancePoolStack:
         return self._instance_pool
+
+    @property
+    def services(self) -> ServiceCollection:
+        return self._services
 
     def __enter__(self) -> Self:
         return self

@@ -1,7 +1,8 @@
 import asyncio
+from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Generator
 from types import TracebackType
-from typing import Any, Protocol
+from typing import Any, Protocol, override
 
 import pytest
 from peritype import TWrap, wrap_type
@@ -1126,3 +1127,90 @@ async def test_fail_circular_dependency_in_post_init() -> None:
     assert trace[1].__qualname__ == ServiceA.setup.__qualname__
     assert trace[2].__qualname__ == ServiceB.__init__.__qualname__
     assert trace[3].__qualname__ == ServiceA.__init__.__qualname__
+
+
+@pytest.mark.asyncio
+async def test_inject_list_of_services() -> None:
+    services = ServiceCollection()
+
+    class ServiceInterface(ABC):
+        @abstractmethod
+        def get_value(self) -> str: ...
+
+    class ServiceA(ServiceInterface):
+        @override
+        def get_value(self) -> str:
+            return "ServiceA"
+
+    class ServiceB(ServiceInterface):
+        @override
+        def get_value(self) -> str:
+            return "ServiceB"
+
+    services.add_singleton(ServiceA)
+    services.add_singleton(ServiceB)
+
+    async with AsyncInjector(services) as injector:
+        service_list = await injector.require(list[ServiceInterface])
+
+    values = {service.get_value() for service in service_list}
+    assert values == {"ServiceA", "ServiceB"}
+
+
+@pytest.mark.asyncio
+async def test_inject_list_of_generic_services() -> None:
+    services = ServiceCollection()
+
+    class ServiceInterface[T](ABC):
+        @abstractmethod
+        def get_value(self) -> T: ...
+
+    class ServiceA(ServiceInterface[int]):
+        @override
+        def get_value(self) -> int:
+            return 42
+
+    class ServiceB(ServiceInterface[str]):
+        @override
+        def get_value(self) -> str:
+            return "Hello"
+
+    services.add_singleton(ServiceA)
+    services.add_singleton(ServiceB)
+
+    async with AsyncInjector(services) as injector:
+        service_list = await injector.require(list[ServiceInterface[Any]])
+
+    values = {service.get_value() for service in service_list}
+    assert values == {42, "Hello"}
+
+
+@pytest.mark.asyncio
+async def test_inject_dict_of_services() -> None:
+    services = ServiceCollection()
+
+    class ServiceInterface(ABC):
+        @abstractmethod
+        def get_value(self) -> str: ...
+
+    class ServiceA(ServiceInterface):
+        @override
+        def get_value(self) -> str:
+            return "ServiceA"
+
+    class ServiceB(ServiceInterface):
+        @override
+        def get_value(self) -> str:
+            return "ServiceB"
+
+    services.add_singleton(ServiceA)
+    services.add_singleton(ServiceB)
+
+    async with AsyncInjector(services) as injector:
+        service_dict = await injector.require(dict[str, ServiceInterface])
+
+    values = {service.get_value() for service in service_dict.values()}
+    assert values == {"ServiceA", "ServiceB"}
+
+    keys = set(service_dict.keys())
+    assert keys == {"test_inject_dict_of_services.<locals>.ServiceA", "test_inject_dict_of_services.<locals>.ServiceB"}

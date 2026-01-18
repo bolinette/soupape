@@ -2,12 +2,15 @@ from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, 
 from dataclasses import dataclass
 from enum import Enum, auto, unique
 from types import TracebackType
-from typing import Any, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
+from typing import TYPE_CHECKING, Any, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
 
 from peritype import FWrap, TWrap
 
 from soupape.instances import InstancePoolStack
 from soupape.utils import CircularGuard
+
+if TYPE_CHECKING:
+    from soupape import ServiceCollection
 
 type ResolveFunction[**P, T] = (
     Callable[P, T]
@@ -32,6 +35,9 @@ class Injector(Protocol):
 
     @property
     def instances(self) -> InstancePoolStack: ...
+
+    @property
+    def services(self) -> "ServiceCollection": ...
 
     def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
 

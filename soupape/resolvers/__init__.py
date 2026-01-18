@@ -9,3 +9,7 @@ from soupape.resolvers.raw import (
     RawTypeResolverContainer as RawTypeResolverContainer,
     WrappedTypeResolverContainer as WrappedTypeResolverContainer,
 )
+from soupape.resolvers.collections import (
+    ListResolverContainer as ListResolverContainer,
+    DictResolverContainer as DictResolverContainer,
+)

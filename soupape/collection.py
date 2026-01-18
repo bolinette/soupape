@@ -1,5 +1,5 @@
 import inspect
-from collections.abc import AsyncGenerator, AsyncIterable, Generator, Iterable
+from collections.abc import AsyncGenerator, AsyncIterable, Generator, Iterable, Iterator
 from typing import Any, overload
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
@@ -100,10 +100,14 @@ class ServiceCollection:
         if interface in self._registered_services:
             return self._resolvers[interface]
         if self._registered_services.contains_matching(interface):
-            matched = self._registered_services.get_matching(interface)
+            matched = self._registered_services.first_matching(interface)
             assert matched is not None
             return self._resolvers[matched]
         raise ServiceNotFoundError(str(interface))
+
+    @property
+    def registered_types(self) -> Iterator[TWrap[Any]]:
+        yield from self._registered_services
 
     @overload
     def add_singleton[IntrT, ImplT](self, interface: type[IntrT], implementation: type[ImplT], /) -> None: ...
