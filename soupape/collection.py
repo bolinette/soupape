@@ -7,8 +7,8 @@ from peritype.collections import TypeBag, TypeMap
 
 from soupape.errors import ServiceNotFoundError
 from soupape.resolvers import (
-    DefaultResolverContainer,
-    FunctionResolverContainer,
+    DefaultResolver,
+    FunctionResolver,
     ServiceResolver,
 )
 from soupape.types import InjectionScope, ResolveFunction
@@ -82,12 +82,12 @@ class ServiceCollection:
             else:
                 interface_w = wrap_type(interface)
                 implementation_w = func_resolver_return
-            return FunctionResolverContainer(scope, fwrap, required=interface_w, registered=implementation_w)
+            return FunctionResolver(scope, fwrap, required=interface_w, registered=implementation_w)
 
         assert implementation is not None and interface is not None
         interface_w = wrap_type(interface)
         implementation_w = wrap_type(implementation)
-        return DefaultResolverContainer(scope, interface_w, implementation_w)
+        return DefaultResolver(scope, interface_w, implementation_w)
 
     def is_registered[T](self, interface: type[T] | TWrap[T]) -> bool:
         if not isinstance(interface, TWrap):

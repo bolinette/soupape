@@ -8,12 +8,12 @@ from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError,
 from soupape.instances import InstancePoolStack
 from soupape.resolvers import (
     DependencyTreeNode,
-    DictResolverContainer,
-    InstantiatedResolverContainer,
-    ListResolverContainer,
-    RawTypeResolverContainer,
+    DictResolver,
+    InstantiatedResolver,
+    ListResolver,
+    RawTypeResolver,
     ServiceResolver,
-    WrappedTypeResolverContainer,
+    WrappedTypeResolver,
 )
 from soupape.types import (
     InjectionContext,
@@ -32,10 +32,10 @@ class BaseInjector(Injector):
 
     def _register_common_resolvers(self) -> None:
         if self.is_root_injector:
-            self._services.add_resolver(RawTypeResolverContainer())
-            self._services.add_resolver(WrappedTypeResolverContainer())
-            self._services.add_resolver(ListResolverContainer())
-            self._services.add_resolver(DictResolverContainer())
+            self._services.add_resolver(RawTypeResolver())
+            self._services.add_resolver(WrappedTypeResolver())
+            self._services.add_resolver(ListResolver())
+            self._services.add_resolver(DictResolver())
 
     def _get_injection_context(
         self,
@@ -101,7 +101,7 @@ class BaseInjector(Injector):
         interface: TWrap[T],
         implementation: TWrap[Any] | None = None,
     ) -> ServiceResolver[..., Any]:
-        return InstantiatedResolverContainer(interface, implementation or interface)
+        return InstantiatedResolver(interface, implementation or interface)
 
     def _get_service_resolver(self, interface: TWrap[Any]) -> ServiceResolver[..., Any]:
         if self._services.is_registered(interface):

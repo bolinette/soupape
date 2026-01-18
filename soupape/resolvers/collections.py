@@ -9,7 +9,7 @@ from soupape.resolvers.utils import dict_str_any_w, list_any_w
 from soupape.types import InjectionContext, InjectionScope, Injector, ResolveFunction
 
 
-class ListResolverContainer(ServiceResolver[[], list[Any]]):
+class ListResolver(ServiceResolver[[], list[Any]]):
     @property
     @override
     def name(self) -> str:
@@ -45,10 +45,10 @@ class ListResolverContainer(ServiceResolver[[], list[Any]]):
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., list[Any]]:
         assert context.required is not None
-        return _ListResolver(context.injector, context.required.generic_params[0])  # pyright: ignore[reportReturnType]
+        return _ListResolveFunc(context.injector, context.required.generic_params[0])  # pyright: ignore[reportReturnType]
 
 
-class _ListResolver:
+class _ListResolveFunc:
     def __init__(self, injector: Injector, tw: TWrap[list[Any]]) -> None:
         self._injector = injector
         self._type = tw
@@ -79,7 +79,7 @@ class _ListResolver:
         return services
 
 
-class DictResolverContainer(ServiceResolver[[], dict[str, Any]]):
+class DictResolver(ServiceResolver[[], dict[str, Any]]):
     @property
     @override
     def name(self) -> str:
@@ -115,10 +115,10 @@ class DictResolverContainer(ServiceResolver[[], dict[str, Any]]):
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., dict[str, Any]]:
         assert context.required is not None
-        return _DictResolver(context.injector, context.required.generic_params[1])  # pyright: ignore[reportReturnType]
+        return _DictResolveFunc(context.injector, context.required.generic_params[1])  # pyright: ignore[reportReturnType]
 
 
-class _DictResolver:
+class _DictResolveFunc:
     def __init__(self, injector: Injector, tw: TWrap[list[Any]]) -> None:
         self._injector = injector
         self._type = tw

@@ -8,7 +8,7 @@ from soupape.resolvers.utils import type_any_w, type_any_w_w
 from soupape.types import InjectionContext, InjectionScope, ResolveFunction
 
 
-class RawTypeResolverContainer(ServiceResolver[[], type[Any]]):
+class RawTypeResolver(ServiceResolver[[], type[Any]]):
     @property
     @override
     def name(self) -> str:
@@ -44,10 +44,10 @@ class RawTypeResolverContainer(ServiceResolver[[], type[Any]]):
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., type[Any]]:
         assert context.required is not None
-        return _RawTypeResolver(context.required)
+        return _RawTypeResolveFunc(context.required)
 
 
-class _RawTypeResolver[T]:
+class _RawTypeResolveFunc[T]:
     def __init__(self, tw: TWrap[T]) -> None:
         self._type = tw
 
@@ -55,7 +55,7 @@ class _RawTypeResolver[T]:
         return self._type.generic_params[0].inner_type
 
 
-class WrappedTypeResolverContainer(ServiceResolver[[], TWrap[Any]]):
+class WrappedTypeResolver(ServiceResolver[[], TWrap[Any]]):
     @property
     @override
     def name(self) -> str:
@@ -91,10 +91,10 @@ class WrappedTypeResolverContainer(ServiceResolver[[], TWrap[Any]]):
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., TWrap[Any]]:
         assert context.required is not None
-        return _WrappedTypeResolver(context.required)
+        return _WrappedTypeResolveFunc(context.required)
 
 
-class _WrappedTypeResolver[T]:
+class _WrappedTypeResolveFunc[T]:
     def __init__(self, tw: TWrap[T]) -> None:
         self._tw = tw
 

@@ -9,7 +9,7 @@ from soupape.resolvers import ServiceResolver
 from soupape.types import InjectionContext, InjectionScope, ResolveFunction
 
 
-class InstantiatedResolverContainer[T](ServiceResolver[[], T]):
+class InstantiatedResolver[T](ServiceResolver[[], T]):
     def __init__(self, interface: TWrap[T], implementation: TWrap[Any]) -> None:
         self._interface = interface
         self._implementation = implementation
@@ -48,10 +48,10 @@ class InstantiatedResolverContainer[T](ServiceResolver[[], T]):
 
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[[], T]:
-        return _InstantiatedResolver[T](context.injector.instances, self._implementation)  # pyright: ignore[reportReturnType]
+        return _InstantiatedResolveFunc[T](context.injector.instances, self._implementation)  # pyright: ignore[reportReturnType]
 
 
-class _InstantiatedResolver[T]:
+class _InstantiatedResolveFunc[T]:
     def __init__(self, instances: InstancePoolStack, tw: TWrap[T]) -> None:
         self._instances = instances
         self._type = tw

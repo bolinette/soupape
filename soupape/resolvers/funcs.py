@@ -7,7 +7,7 @@ from soupape.resolvers import ServiceResolver
 from soupape.types import InjectionContext, InjectionScope, ResolveFunction
 
 
-class FunctionResolverContainer[**P, T](ServiceResolver[P, T]):
+class FunctionResolver[**P, T](ServiceResolver[P, T]):
     def __init__(
         self,
         scope: InjectionScope,
@@ -55,10 +55,10 @@ class FunctionResolverContainer[**P, T](ServiceResolver[P, T]):
 
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[P, T]:
-        return _FunctionResolver[P, T](self._func)
+        return _FunctionResolveFunc[P, T](self._func)
 
 
-class _FunctionResolver[**P, T]:
+class _FunctionResolveFunc[**P, T]:
     def __init__(self, func: FWrap[P, T]) -> None:
         self._func = func
 

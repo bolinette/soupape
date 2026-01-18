@@ -18,7 +18,7 @@ from soupape.types import (
 from soupape.utils import meta
 
 
-class DefaultResolverContainer[**P, T](ServiceResolver[P, T]):
+class DefaultResolver[**P, T](ServiceResolver[P, T]):
     def __init__(
         self,
         scope: InjectionScope,
@@ -64,9 +64,9 @@ class DefaultResolverContainer[**P, T](ServiceResolver[P, T]):
     @override
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[P, T]:
         if context.injector.is_async:
-            return _AsyncServiceDefaultResolver(self, context)
+            return _AsyncServiceDefaultResolveFunc(self, context)
         else:
-            return _SyncServiceDefaultResolver(self, context)
+            return _SyncServiceDefaultResolveFunc(self, context)
 
     def get_post_inits(self, twrap: TWrap[Any]) -> Iterable[Callable[..., Any]]:
         for node in twrap.nodes:
@@ -78,8 +78,8 @@ class DefaultResolverContainer[**P, T](ServiceResolver[P, T]):
                 yield attr
 
 
-class _AsyncServiceDefaultResolver[**P, T]:
-    def __init__(self, resolver: "DefaultResolverContainer[P, T]", context: InjectionContext) -> None:
+class _AsyncServiceDefaultResolveFunc[**P, T]:
+    def __init__(self, resolver: "DefaultResolver[P, T]", context: InjectionContext) -> None:
         self._resolver = resolver
         self._context = context
         self._injector = context.injector
@@ -107,8 +107,8 @@ class _AsyncServiceDefaultResolver[**P, T]:
         yield instance
 
 
-class _SyncServiceDefaultResolver[**P, T]:
-    def __init__(self, resolver: "DefaultResolverContainer[P, T]", context: InjectionContext) -> None:
+class _SyncServiceDefaultResolveFunc[**P, T]:
+    def __init__(self, resolver: "DefaultResolver[P, T]", context: InjectionContext) -> None:
         self.resolver = resolver
         self._context = context
         self._injector = context.injector
