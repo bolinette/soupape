@@ -3,9 +3,9 @@ from typing import Any, override
 
 from peritype import FWrap, TWrap
 
-from soupape.resolvers import ServiceResolver
-from soupape.resolvers.utils import type_any_w, type_any_w_w
-from soupape.types import InjectionContext, InjectionScope, ResolveFunction
+from soupape._resolvers import ServiceResolver
+from soupape._resolvers._utils import type_any_w, type_any_w_w
+from soupape._types import InjectionContext, InjectionScope, ResolveFunction
 
 
 class RawTypeResolver(ServiceResolver[[], type[Any]]):
@@ -30,7 +30,7 @@ class RawTypeResolver(ServiceResolver[[], type[Any]]):
         return None
 
     @override
-    def get_resolve_hints(self, **kwargs: Any) -> dict[str, TWrap[Any]]:
+    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
@@ -77,7 +77,7 @@ class WrappedTypeResolver(ServiceResolver[[], TWrap[Any]]):
         return None
 
     @override
-    def get_resolve_hints(self, **kwargs: Any) -> dict[str, TWrap[Any]]:
+    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override

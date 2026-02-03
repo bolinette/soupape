@@ -30,4 +30,13 @@ def is_type_like(obj: Any) -> TypeGuard[type[Any]]:
     return isinstance(obj, type) or get_origin(obj) is not None
 
 
+def add_type_to_type_globals(receiving: type[Any], received: type[Any]) -> None:
+    """
+    Adds `received` inside `receiving`'s globals, making sure no :py:class:`NameError` is raised.
+
+    This is useful when using classes defined in a local scope.
+    """
+    receiving.__init__.__globals__[received.__name__] = received  # type: ignore
+
+
 meta = Hafersack("soupape")

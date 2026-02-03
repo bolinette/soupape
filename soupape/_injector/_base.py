@@ -4,9 +4,8 @@ from typing import Any, Self
 from peritype import TWrap
 
 from soupape import ServiceCollection
-from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
-from soupape.instances import InstancePoolStack
-from soupape.resolvers import (
+from soupape._instances import InstancePoolStack
+from soupape._resolvers import (
     DependencyTreeNode,
     DictResolver,
     InstantiatedResolver,
@@ -15,12 +14,13 @@ from soupape.resolvers import (
     ServiceResolver,
     WrappedTypeResolver,
 )
-from soupape.types import (
+from soupape._types import (
     InjectionContext,
     InjectionScope,
     Injector,
 )
-from soupape.utils import CircularGuard
+from soupape._utils import CircularGuard
+from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
 
 
 class BaseInjector(Injector):
@@ -84,8 +84,13 @@ class BaseInjector(Injector):
     def _has_instance(self, twrap: TWrap[Any]) -> bool:
         return twrap in self._instance_pool
 
-    def _set_instance(self, scope: InjectionScope, twrap: TWrap[Any], instance: Any) -> None:
-        match scope:
+    def _set_instance(self, context: InjectionContext, twrap: TWrap[Any], instance: Any) -> None:
+        if twrap.contains_any:
+            if context.required is not None:
+                twrap = twrap.specialize_with(context.required)
+            if twrap.contains_any:
+                raise ValueError(f"Cannot store instance for type with Any: {twrap}")
+        match context.scope:
             case InjectionScope.IMMEDIATE | InjectionScope.TRANSIENT:
                 return
             case InjectionScope.SINGLETON:
@@ -123,7 +128,7 @@ class BaseInjector(Injector):
 
         args: list[DependencyTreeNode[..., Any]] = []
         kwargs: dict[str, DependencyTreeNode[..., Any]] = {}
-        hints = resolver.get_resolve_hints(belongs_to=context.origin)
+        hints = resolver.get_resolve_hints(context)
 
         if context.positional_args is not None:
             skip = len(context.positional_args)

@@ -5,7 +5,7 @@ from typing import Any
 
 from peritype import FWrap, TWrap, wrap_func
 
-from soupape.types import InjectionContext, InjectionScope, ResolveFunction
+from soupape._types import InjectionContext, InjectionScope, ResolveFunction
 
 
 class ServiceResolver[**P, T](ABC):
@@ -31,7 +31,7 @@ class ServiceResolver[**P, T](ABC):
     def registered(self) -> TWrap[Any] | None: ...
 
     @abstractmethod
-    def get_resolve_hints(self, *, belongs_to: TWrap[Any] | None = None) -> dict[str, TWrap[Any]]: ...
+    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]: ...
 
     @abstractmethod
     def get_instance_function(self) -> FWrap[P, T]: ...

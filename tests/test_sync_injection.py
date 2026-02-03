@@ -2,12 +2,13 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Generator
 from types import TracebackType
-from typing import Any, Protocol, override
+from typing import Any, override
 
 import pytest
 from peritype import TWrap, wrap_type
 
 from soupape import Injector, ServiceCollection, SyncInjector, post_init
+from soupape._utils import add_type_to_type_globals
 from soupape.errors import (
     AsyncInSyncInjectorError,
     CircularDependencyError,
@@ -93,8 +94,7 @@ async def test_fail_call_async_function_in_sync_injector() -> None:
     await exc_info.value.close()
 
 
-@pytest.mark.asyncio
-async def test_sync_inject_service_with_positional_only_parameter() -> None:
+def test_sync_inject_service_with_positional_only_parameter() -> None:
     services = ServiceCollection()
 
     class PositionalService:
@@ -121,8 +121,7 @@ async def test_sync_inject_service_with_positional_only_parameter() -> None:
     assert service.greet() == "Hello from Positional!"
 
 
-@pytest.mark.asyncio
-async def test_sync_inject_service_with_keyword_only_parameter() -> None:
+def test_sync_inject_service_with_keyword_only_parameter() -> None:
     services = ServiceCollection()
 
     class KeywordService:
@@ -149,8 +148,7 @@ async def test_sync_inject_service_with_keyword_only_parameter() -> None:
     assert service.greet() == "Hello from Keyword!"
 
 
-@pytest.mark.asyncio
-async def test_sync_inject_with_post_init() -> None:
+def test_sync_inject_with_post_init() -> None:
     services = ServiceCollection()
 
     class TestService:
@@ -191,8 +189,7 @@ async def test_fail_sync_inject_with_async_post_init() -> None:
     await exc_info.value.close()
 
 
-@pytest.mark.asyncio
-async def test_sync_inject_yield_resolver() -> None:
+def test_sync_inject_yield_resolver() -> None:
     services = ServiceCollection()
 
     class Resource:
@@ -214,8 +211,7 @@ async def test_sync_inject_yield_resolver() -> None:
     assert resource.active is True
 
 
-@pytest.mark.asyncio
-async def test_fail_sync_inject_async_yield_resolver() -> None:
+def test_fail_sync_inject_async_yield_resolver() -> None:
     services = ServiceCollection()
 
     class Resource:
@@ -236,8 +232,7 @@ async def test_fail_sync_inject_async_yield_resolver() -> None:
             injector.require(Resource)
 
 
-@pytest.mark.asyncio
-async def test_sync_injection_context_manager_sync_resolver() -> None:
+def test_sync_injection_context_manager_sync_resolver() -> None:
     services = ServiceCollection()
 
     class Resource:
@@ -260,8 +255,7 @@ async def test_sync_injection_context_manager_sync_resolver() -> None:
     assert resource.active is False
 
 
-@pytest.mark.asyncio
-async def test_fail_sync_injection_context_manager_async_resolver() -> None:
+def test_fail_sync_injection_context_manager_async_resolver() -> None:
     services = ServiceCollection()
 
     class Resource:
@@ -283,8 +277,7 @@ async def test_fail_sync_injection_context_manager_async_resolver() -> None:
             injector.require(Resource)
 
 
-@pytest.mark.asyncio
-async def test_sync_injection_context_manager_service() -> None:
+def test_sync_injection_context_manager_service() -> None:
     services = ServiceCollection()
 
     class Resource:
@@ -310,8 +303,7 @@ async def test_sync_injection_context_manager_service() -> None:
     assert resource.active is False
 
 
-@pytest.mark.asyncio
-async def test_sync_injection_async_context_manager_service() -> None:
+def test_sync_injection_async_context_manager_service() -> None:
     services = ServiceCollection()
 
     class Resource:
@@ -337,8 +329,7 @@ async def test_sync_injection_async_context_manager_service() -> None:
     assert resource.active is True
 
 
-@pytest.mark.asyncio
-async def test_fail_service_not_found() -> None:
+def test_fail_service_not_found() -> None:
     services = ServiceCollection()
 
     class TestService:
@@ -353,8 +344,7 @@ async def test_fail_service_not_found() -> None:
             injector.require(TestService)
 
 
-@pytest.mark.asyncio
-async def test_fail_generic_service_not_found() -> None:
+def test_fail_generic_service_not_found() -> None:
     class Service[T]: ...
 
     services = ServiceCollection()
@@ -365,8 +355,7 @@ async def test_fail_generic_service_not_found() -> None:
             injector.require(Service[str])
 
 
-@pytest.mark.asyncio
-async def test_simple_injection_in_service() -> None:
+def test_simple_injection_in_service() -> None:
     services = ServiceCollection()
 
     class BaseService:
@@ -392,36 +381,48 @@ async def test_simple_injection_in_service() -> None:
     assert service.greet() == "Hello, World!"
 
 
-@pytest.mark.asyncio
-async def test_inject_with_catch_all_resolver() -> None:
+def test_inject_with_catch_all_resolver() -> None:
     services = ServiceCollection()
 
-    class Service[T]:
-        def __init__(self) -> None:
-            pass
+    class AsyncService[T: int | str]:
+        def __init__(self, id: int) -> None:
+            self.id = id
 
-    def service_resolver() -> Service[Any]:
-        return Service()
+        def fetch_data(self) -> str:
+            return f"Async Data {self.id}"
 
-    services.add_singleton(service_resolver)
+    count = {"id": 0}
+
+    def async_service_resolver[T: int | str](_cls: type[T]) -> AsyncService[T]:
+        count["id"] += 1
+        return AsyncService[_cls](count["id"])
+
+    services.add_singleton(async_service_resolver)
 
     with SyncInjector(services) as injector:
-        service = injector.require(Service[int])
+        service1 = injector.require(AsyncService[int])
+        service2 = injector.require(AsyncService[str])
 
-    assert isinstance(service, Service)
+    assert service1 is not service2
+
+    data = service1.fetch_data()
+    assert data == "Async Data 1"
+
+    data = service2.fetch_data()
+    assert data == "Async Data 2"
 
 
 def test_inject_with_catch_all_interface() -> None:
     services = ServiceCollection()
 
-    class Service[T](Protocol):
+    class Service[T]:
         def fetch_data(self) -> str: ...
 
-    class Service1[T]:
+    class Service1[T](Service[T]):
         def fetch_data(self) -> str:
             return "Service1 Data"
 
-    class Service2[T]:
+    class Service2[T](Service[T]):
         def fetch_data(self) -> str:
             return "Service2 Data"
 
@@ -441,18 +442,18 @@ def test_inject_with_catch_all_interface() -> None:
 def test_register_partial_catch_all_resolver() -> None:
     services = ServiceCollection()
 
-    class Service[T, U](Protocol):
+    class Service[T, U]:
         def fetch_data(self) -> str: ...
 
-    class Service1[T, U]:
+    class Service1[T, U](Service[T, U]):
         def fetch_data(self) -> str:
             return "Service1 Data"
 
-    class Service2[T, U]:
+    class Service2[T, U](Service[T, U]):
         def fetch_data(self) -> str:
             return "Service2 Data"
 
-    class Service3[T, U]:
+    class Service3[T, U](Service[T, U]):
         def fetch_data(self) -> str:
             return "Service3 Data"
 
@@ -473,8 +474,7 @@ def test_register_partial_catch_all_resolver() -> None:
     assert data3 == "Service3 Data"
 
 
-@pytest.mark.asyncio
-async def test_inject_resolver_with_params() -> None:
+def test_inject_resolver_with_params() -> None:
     services = ServiceCollection()
 
     class BaseService:
@@ -504,8 +504,7 @@ async def test_inject_resolver_with_params() -> None:
     assert data == "Hello, World!"
 
 
-@pytest.mark.asyncio
-async def test_sync_inject_service_twice() -> None:
+def test_sync_inject_service_twice() -> None:
     services = ServiceCollection()
 
     class SyncService:
@@ -520,8 +519,7 @@ async def test_sync_inject_service_twice() -> None:
     assert service1 is service2
 
 
-@pytest.mark.asyncio
-async def test_inject_scoped_twice() -> None:
+def test_inject_scoped_twice() -> None:
     services = ServiceCollection()
 
     class ScopedService:
@@ -538,8 +536,7 @@ async def test_inject_scoped_twice() -> None:
     assert instance1 is instance2
 
 
-@pytest.mark.asyncio
-async def test_fail_inject_scoped_in_root_injector() -> None:
+def test_fail_inject_scoped_in_root_injector() -> None:
     services = ServiceCollection()
 
     class ScopedService:
@@ -563,8 +560,7 @@ async def test_fail_inject_scoped_in_root_injector() -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_inject_transient() -> None:
+def test_inject_transient() -> None:
     services = ServiceCollection()
 
     class TransientService:
@@ -580,8 +576,7 @@ async def test_inject_transient() -> None:
     assert instance1 is not instance2
 
 
-@pytest.mark.asyncio
-async def test_inject_scoped_twice_in_different_sessions() -> None:
+def test_inject_scoped_twice_in_different_sessions() -> None:
     services = ServiceCollection()
 
     class ScopedService:
@@ -599,8 +594,7 @@ async def test_inject_scoped_twice_in_different_sessions() -> None:
     assert instance1 is not instance2
 
 
-@pytest.mark.asyncio
-async def test_inject_singleton_in_different_scopes() -> None:
+def test_inject_singleton_in_different_scopes() -> None:
     services = ServiceCollection()
 
     class SingletonService:
@@ -618,8 +612,7 @@ async def test_inject_singleton_in_different_scopes() -> None:
     assert instance1 is instance2
 
 
-@pytest.mark.asyncio
-async def test_fail_inject_unregistered_service() -> None:
+def test_fail_inject_unregistered_service() -> None:
     services = ServiceCollection()
 
     class UnregisteredService:
@@ -631,8 +624,7 @@ async def test_fail_inject_unregistered_service() -> None:
             injector.require(UnregisteredService)
 
 
-@pytest.mark.asyncio
-async def test_fail_inject_unregistered_service_in_dependency() -> None:
+def test_fail_inject_unregistered_service_in_dependency() -> None:
     services = ServiceCollection()
 
     class UnregisteredService:
@@ -650,8 +642,7 @@ async def test_fail_inject_unregistered_service_in_dependency() -> None:
             injector.require(DependentService)
 
 
-@pytest.mark.asyncio
-async def test_fail_missing_type_hint_in_dependency() -> None:
+def test_fail_missing_type_hint_in_dependency() -> None:
     services = ServiceCollection()
 
     class DependencyService:
@@ -675,8 +666,7 @@ async def test_fail_missing_type_hint_in_dependency() -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_fail_missing_type_hint_in_function_call() -> None:
+def test_fail_missing_type_hint_in_function_call() -> None:
     services = ServiceCollection()
 
     class DependencyService:
@@ -699,8 +689,7 @@ async def test_fail_missing_type_hint_in_function_call() -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_inject_with_inherited_post_init() -> None:
+def test_inject_with_inherited_post_init() -> None:
     services = ServiceCollection()
 
     class BaseService:
@@ -727,8 +716,7 @@ async def test_inject_with_inherited_post_init() -> None:
     assert service.numbers == [1, 2]
 
 
-@pytest.mark.asyncio
-async def test_inject_post_init_with_args() -> None:
+def test_inject_post_init_with_args() -> None:
     class OtherService:
         def get_value(self) -> int:
             return 42
@@ -777,8 +765,7 @@ def test_require_injector_protocol() -> None:
         assert service.injector is injector
 
 
-@pytest.mark.asyncio
-async def test_require_generic_type() -> None:
+def test_require_generic_type() -> None:
     class Service[T]:
         def __init__(self, cls: type[T]) -> None:
             self.cls = cls
@@ -791,8 +778,7 @@ async def test_require_generic_type() -> None:
         assert service.cls is str
 
 
-@pytest.mark.asyncio
-async def test_require_generic_twrap() -> None:
+def test_require_generic_twrap() -> None:
     class Service[T]:
         def __init__(self, tw: TWrap[T]) -> None:
             self.tw = tw
@@ -805,8 +791,7 @@ async def test_require_generic_twrap() -> None:
         assert service.tw == wrap_type(int)
 
 
-@pytest.mark.asyncio
-async def test_require_two_generic_twrap() -> None:
+def test_require_two_generic_twrap() -> None:
     class Service[T, U]:
         def __init__(self, tw1: TWrap[T], tw2: TWrap[U]) -> None:
             self.tw1 = tw1
@@ -821,8 +806,7 @@ async def test_require_two_generic_twrap() -> None:
         assert service.tw2 == wrap_type(str)
 
 
-@pytest.mark.asyncio
-async def test_require_inherited_generic_twrap() -> None:
+def test_require_inherited_generic_twrap() -> None:
     class SuperBaseService[T]:
         @post_init
         def _setup1(self, tw: TWrap[T]) -> None:
@@ -847,6 +831,40 @@ async def test_require_inherited_generic_twrap() -> None:
         assert service.tw3 == wrap_type(int)
 
 
+def test_require_generic_type_in_resolver() -> None:
+    class Service[T]:
+        def __init__(self, cls: type[T]) -> None:
+            self.cls = cls
+
+    def service_resolver[T](cls: type[T]) -> Service[T]:
+        return Service(cls)
+
+    services = ServiceCollection()
+    services.add_singleton(service_resolver)
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service[float])
+        assert service.cls is float
+
+
+def test_require_two_generic_type_in_resolver() -> None:
+    class Service[T, U]:
+        def __init__(self, cls1: type[T], cls2: type[U]) -> None:
+            self.cls1 = cls1
+            self.cls2 = cls2
+
+    def service_resolver[T, U](cls1: type[T], cls2: type[U]) -> Service[U, T]:
+        return Service(cls2, cls1)
+
+    services = ServiceCollection()
+    services.add_singleton(service_resolver)
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service[float, int])
+        assert service.cls1 is float
+        assert service.cls2 is int
+
+
 def test_fail_circular_dependency() -> None:
     services = ServiceCollection()
 
@@ -858,9 +876,7 @@ def test_fail_circular_dependency() -> None:
         def __init__(self, service_a: ServiceA) -> None:
             self.service_a = service_a
 
-    # To avoid NameError for forward reference
-    # because these classes are defined inside a function
-    ServiceA.__init__.__globals__["ServiceB"] = ServiceB
+    add_type_to_type_globals(ServiceA, ServiceB)
 
     services.add_singleton(ServiceA)
     services.add_singleton(ServiceB)
@@ -891,10 +907,8 @@ def test_fail_circular_dependency_3_services() -> None:
         def __init__(self, service_a: ServiceA) -> None:
             self.service_a = service_a
 
-    # To avoid NameError for forward reference
-    # because these classes are defined inside a function
-    ServiceA.__init__.__globals__["ServiceB"] = ServiceB
-    ServiceB.__init__.__globals__["ServiceC"] = ServiceC
+    add_type_to_type_globals(ServiceA, ServiceB)
+    add_type_to_type_globals(ServiceB, ServiceC)
 
     services.add_singleton(ServiceA)
     services.add_singleton(ServiceB)
@@ -930,9 +944,7 @@ def test_fail_circular_dependency_in_post_init() -> None:
         def fetch_data(self) -> str:
             return "Data"
 
-    # To avoid NameError for forward reference
-    # because these classes are defined inside a function
-    ServiceA.__init__.__globals__["ServiceB"] = ServiceB
+    add_type_to_type_globals(ServiceA, ServiceB)
 
     services.add_singleton(ServiceA)
     services.add_singleton(ServiceB)
@@ -1031,3 +1043,53 @@ def test_inject_dict_of_services() -> None:
 
     keys = set(service_dict.keys())
     assert keys == {"test_inject_dict_of_services.<locals>.ServiceA", "test_inject_dict_of_services.<locals>.ServiceB"}
+
+
+def test_register_as_any_different_injected() -> None:
+    class Service[T]:
+        def __init__(self, cls: type[T]) -> None:
+            self.cls = cls
+
+    services = ServiceCollection()
+    services.add_singleton(Service[Any])
+
+    with SyncInjector(services) as injector:
+        service_int = injector.require(Service[int])
+        service_str = injector.require(Service[str])
+
+    assert service_int is not service_str
+    assert service_int.cls is int
+    assert service_str.cls is str
+
+
+def test_register_complex_generic_structure() -> None:
+    class BaseService[T]:
+        def fetch_data(self) -> str: ...
+
+    class Service1[T](BaseService[T]):
+        def fetch_data(self) -> str:
+            return "Service1 Data"
+
+    class Service2[T](BaseService[T]):
+        def fetch_data(self) -> str:
+            return "Service2 Data"
+
+    class Controller[T]:
+        def __init__(self, service: BaseService[T]) -> None:
+            self.service = service
+
+        def get_data(self) -> str:
+            return self.service.fetch_data()
+
+    services = ServiceCollection()
+    services.add_singleton(BaseService[Any], Service1)
+    services.add_singleton(BaseService[str], Service2)
+    services.add_singleton(Controller[int])
+    services.add_singleton(Controller[str])
+
+    with SyncInjector(services) as injector:
+        controller_int = injector.require(Controller[int])
+        assert controller_int.get_data() == "Service1 Data"
+
+        controller_str = injector.require(Controller[str])
+        assert controller_str.get_data() == "Service2 Data"

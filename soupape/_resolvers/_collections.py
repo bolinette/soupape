@@ -4,9 +4,9 @@ from typing import Any, override
 
 from peritype import FWrap, TWrap
 
-from soupape.resolvers import ServiceResolver
-from soupape.resolvers.utils import dict_str_any_w, list_any_w
-from soupape.types import InjectionContext, InjectionScope, Injector, ResolveFunction
+from soupape._resolvers import ServiceResolver
+from soupape._resolvers._utils import dict_str_any_w, list_any_w
+from soupape._types import InjectionContext, InjectionScope, Injector, ResolveFunction
 
 
 class ListResolver(ServiceResolver[[], list[Any]]):
@@ -31,7 +31,7 @@ class ListResolver(ServiceResolver[[], list[Any]]):
         return None
 
     @override
-    def get_resolve_hints(self, **kwargs: Any) -> dict[str, TWrap[Any]]:
+    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
@@ -101,7 +101,7 @@ class DictResolver(ServiceResolver[[], dict[str, Any]]):
         return None
 
     @override
-    def get_resolve_hints(self, **kwargs: Any) -> dict[str, TWrap[Any]]:
+    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override

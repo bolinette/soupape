@@ -5,17 +5,17 @@ from typing import Any, override
 
 from peritype import FWrap, TWrap
 
-from soupape.errors import AsyncInSyncInjectorError
-from soupape.post_init import PostInitMetadata
-from soupape.resolvers import ServiceResolver
-from soupape.types import (
+from soupape._post_init import PostInitMetadata
+from soupape._resolvers import ServiceResolver
+from soupape._types import (
     AsyncContextManager,
     InjectionContext,
     InjectionScope,
     ResolveFunction,
     SyncContextManager,
 )
-from soupape.utils import meta
+from soupape._utils import meta
+from soupape.errors import AsyncInSyncInjectorError
 
 
 class DefaultResolver[**P, T](ServiceResolver[P, T]):
@@ -50,8 +50,8 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
         return self._implementation
 
     @override
-    def get_resolve_hints(self, *, belongs_to: TWrap[Any] | None = None) -> dict[str, TWrap[Any]]:
-        return self._implementation.init.get_signature_hints(belongs_to=belongs_to)
+    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+        return self._implementation.init.get_signature_hints(belongs_to=context.origin)
 
     @override
     def get_instance_function(self) -> FWrap[P, T]:

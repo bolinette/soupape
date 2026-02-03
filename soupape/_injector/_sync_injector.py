@@ -1,57 +1,37 @@
 import inspect
-from collections.abc import AsyncGenerator, Callable, Coroutine
-from typing import Any, Self, Unpack, cast, overload
+from collections.abc import Callable
+from typing import Any, Unpack, cast, overload
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
-from soupape.collection import ServiceCollection
-from soupape.injector import BaseInjector
-from soupape.instances import InstancePoolStack
-from soupape.resolvers import DependencyTreeNode, FunctionResolver
-from soupape.types import (
+from soupape._collection import ServiceCollection
+from soupape._injector import BaseInjector
+from soupape._instances import InstancePoolStack
+from soupape._resolvers import DependencyTreeNode, FunctionResolver
+from soupape._types import (
     InjectionContext,
     InjectionScope,
     Injector,
     InjectorCallArgs,
 )
-from soupape.utils import CircularGuard
+from soupape._utils import CircularGuard
+from soupape.errors import AsyncInSyncInjectorError
 
 
-class AsyncInjector(BaseInjector, Injector):
+class SyncInjector(BaseInjector, Injector):
     def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
         super().__init__(services, instance_pool)
-        self._async_generators_to_close: list[AsyncGenerator[Any]] = []
         self._set_injector_in_services()
 
     @property
     def is_async(self) -> bool:
-        return True
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: Any,
-    ) -> None:
-        for gen in self._generators_to_close:
-            try:
-                next(gen)
-            except StopIteration:
-                pass
-        for agen in self._async_generators_to_close:
-            try:
-                await anext(agen)
-            except StopAsyncIteration:
-                pass
+        return False
 
     def _set_injector_in_services(self) -> None:
         self._instance_pool.set_instance(injector_w, self)
-        self._instance_pool.set_instance(async_injector_w, self)
+        self._instance_pool.set_instance(sync_injector_w, self)
 
-    async def _resolve_service[T](
+    def _resolve_service[T](
         self,
         context: InjectionContext,
         dep_node: DependencyTreeNode[..., T],
@@ -60,15 +40,16 @@ class AsyncInjector(BaseInjector, Injector):
 
         resolved_args: list[Any] = []
         if context.positional_args is not None:
-            for arg in context.positional_args:
+            positional_args = context.positional_args
+            for arg in positional_args:
                 resolved_args.append(arg)
         for arg in dep_node.args:
-            resolved_arg = await self._resolve_service(context.new_required(dep_node.scope, arg.required), arg)
+            resolved_arg = self._resolve_service(context.new_required(dep_node.scope, arg.required), arg)
             resolved_args.append(resolved_arg)
 
         resolved_kwargs: dict[str, Any] = {}
         for kwarg_name, kwarg in dep_node.kwargs.items():
-            resolved_kwarg = await self._resolve_service(context.new_required(dep_node.scope, kwarg.required), kwarg)
+            resolved_kwarg = self._resolve_service(context.new_required(dep_node.scope, kwarg.required), kwarg)
             resolved_kwargs[kwarg_name] = resolved_kwarg
 
         resolver = dep_node.resolver.get_resolve_func(context)
@@ -78,24 +59,23 @@ class AsyncInjector(BaseInjector, Injector):
             self._generators_to_close.append(resolved)
             resolved = next(resolved)
         elif inspect.isasyncgen(resolved):
-            self._async_generators_to_close.append(resolved)
-            resolved = await anext(resolved)
+            raise AsyncInSyncInjectorError(resolved)
         if inspect.iscoroutine(resolved):
-            resolved = await resolved
+            raise AsyncInSyncInjectorError(resolved)
 
         if dep_node.registered is not None:
-            self._set_instance(dep_node.scope, dep_node.registered, resolved)
+            self._set_instance(context, dep_node.registered, resolved)
 
         return resolved  # type: ignore
 
-    async def require[T](self, interface: type[T] | TWrap[T]) -> T:
+    def require[T](self, interface: type[T] | TWrap[T]) -> T:
         if not isinstance(interface, TWrap):
             twrap = wrap_type(interface)
         else:
             twrap = interface
-        return await self._require(twrap, CircularGuard())
+        return self._require(twrap, CircularGuard())
 
-    async def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T:
+    def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T:
         resolver = self._get_service_resolver(interface)
         context = self._get_injection_context(
             interface,
@@ -104,34 +84,22 @@ class AsyncInjector(BaseInjector, Injector):
             required=interface,
         )
         dep_node = self._build_dependency_tree(context.copy(), resolver)
-        resolved = await self._resolve_service(context.copy(), dep_node)
+        resolved = self._resolve_service(context.copy(), dep_node)
         return resolved
 
     @overload
-    async def call[**P, T](
-        self,
-        callable: FWrap[P, Coroutine[Any, Any, T]],
-        **kwargs: Unpack[InjectorCallArgs],
-    ) -> T: ...
-    @overload
-    async def call[**P, T](
+    def call[**P, T](
         self,
         callable: FWrap[P, T],
         **kwargs: Unpack[InjectorCallArgs],
     ) -> T: ...
     @overload
-    async def call[**P, T](
-        self,
-        callable: Callable[P, Coroutine[Any, Any, T]],
-        **kwargs: Unpack[InjectorCallArgs],
-    ) -> T: ...
-    @overload
-    async def call[**P, T](
+    def call[**P, T](
         self,
         callable: Callable[P, T],
         **kwargs: Unpack[InjectorCallArgs],
     ) -> T: ...
-    async def call(
+    def call(
         self,
         callable: Callable[..., Any] | FWrap[..., Any],
         **kwargs: Unpack[InjectorCallArgs],
@@ -149,11 +117,11 @@ class AsyncInjector(BaseInjector, Injector):
         )
         resolver = FunctionResolver(InjectionScope.IMMEDIATE, fwrap)
         dep_node = self._build_dependency_tree(context.copy(), resolver)
-        return await self._resolve_service(context.copy(), dep_node)
+        return self._resolve_service(context.copy(), dep_node)
 
-    def get_scoped_injector(self) -> "AsyncInjector":
-        return AsyncInjector(self._services, self._instance_pool.stack())
+    def get_scoped_injector(self) -> "SyncInjector":
+        return SyncInjector(self._services, self._instance_pool.stack())
 
 
-async_injector_w = wrap_type(AsyncInjector)
+sync_injector_w = wrap_type(SyncInjector)
 injector_w = wrap_type(Injector)

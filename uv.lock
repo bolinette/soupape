@@ -101,11 +101,11 @@ wheels = [
 
 [[package]]
 name = "peritype"
-version = "0.5.1"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f5/be/e080aa8d2accbdcf178b17280ef245d8010c8c00086218d842727602ad64/peritype-0.5.1.tar.gz", hash = "sha256:d7d0729c5609419095760463d5ce0406bbf609f70f8afc27847f67eb1c31cc2c", size = 8656, upload-time = "2026-01-18T21:57:04.463Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/d1/1f7a3e81b2e79ae09e87d634ee7114499f68d33fd499f27bacc61d470abf/peritype-0.6.0.tar.gz", hash = "sha256:610941df77e5d1dc6634a7437b401957d16c90c78d340d701eec3c4aafccf1d9", size = 11163, upload-time = "2026-01-30T23:16:10.816Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/23/95ea94af2d7e92119d3ca1201a67f6a142e34d7ae27f714f1a5a494f6900/peritype-0.5.1-py3-none-any.whl", hash = "sha256:10ab3f13309491b2c4137acf1f740c2796772a9acd70b364f1af0d140dde9951", size = 12590, upload-time = "2026-01-18T21:57:03.494Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/d9/da8ac5a0339a4caa9430a0240b385f98fb2128b5570b19553c27a453918f/peritype-0.6.0-py3-none-any.whl", hash = "sha256:430f5481a34063c86ca0f46fbdaccef79751f6e103169eaac25afa9014d10ed8", size = 16120, upload-time = "2026-01-30T23:16:09.962Z" },
 ]
 
 [[package]]
@@ -196,7 +196,7 @@ wheels = [
 
 [[package]]
 name = "soupape"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "hafersack" },
@@ -216,7 +216,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "hafersack", specifier = ">=0.1.0" },
-    { name = "peritype", specifier = ">=0.5.1" },
+    { name = "peritype", specifier = "==0.6.0" },
 ]
 
 [package.metadata.requires-dev]

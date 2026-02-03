@@ -3,8 +3,8 @@ from typing import Any, override
 
 from peritype import FWrap, TWrap
 
-from soupape.resolvers import ServiceResolver
-from soupape.types import InjectionContext, InjectionScope, ResolveFunction
+from soupape._resolvers import ServiceResolver
+from soupape._types import InjectionContext, InjectionScope, ResolveFunction
 
 
 class FunctionResolver[**P, T](ServiceResolver[P, T]):
@@ -42,8 +42,12 @@ class FunctionResolver[**P, T](ServiceResolver[P, T]):
         return self._registered
 
     @override
-    def get_resolve_hints(self, *, belongs_to: TWrap[Any] | None = None) -> dict[str, TWrap[Any]]:
-        return self._func.get_signature_hints(belongs_to=belongs_to)
+    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+        if not self._func.is_defined and context.required is not None:
+            func = self._func.specialize_from_return(context.required)
+        else:
+            func = self._func
+        return func.get_signature_hints(belongs_to=context.origin)
 
     @override
     def get_instance_function(self) -> FWrap[P, T]:

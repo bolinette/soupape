@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable
 from typing import Any, overload
 
-from soupape.utils import meta
+from soupape._utils import meta
 
 
 class PostInitMetadata:

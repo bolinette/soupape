@@ -53,3 +53,13 @@ class CircularDependencyError(SoupapeError):
             "Injection cycle detected.\n" + "\n ↳ ".join(f"{i + 1}. {func}" for i, func in enumerate(trace)),
         )
         self.trace = trace
+
+
+class IncompatibleInterfaceError(SoupapeError):
+    def __init__(self, interface: str, implementation: str) -> None:
+        super().__init__(
+            "soupape.interface.incompatible",
+            f"Interface {interface} is not compatible with type {implementation}",
+        )
+        self.interface = interface
+        self.implementation = implementation

@@ -5,14 +5,14 @@ from typing import Any, overload
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 from peritype.collections import TypeBag, TypeMap
 
-from soupape.errors import ServiceNotFoundError
-from soupape.resolvers import (
+from soupape._resolvers import (
     DefaultResolver,
     FunctionResolver,
     ServiceResolver,
 )
-from soupape.types import InjectionScope, ResolveFunction
-from soupape.utils import is_type_like
+from soupape._types import InjectionScope, ResolveFunction
+from soupape._utils import is_type_like
+from soupape.errors import IncompatibleInterfaceError, ServiceNotFoundError
 
 
 class ServiceCollection:
@@ -29,6 +29,8 @@ class ServiceCollection:
         self._resolvers.add(resolver.required, resolver)
 
     def _unpack_resolver_function_return(self, func: FWrap[..., Any]) -> TWrap[Any]:
+        if not func.is_defined:
+            func = func.unspecialize()
         original = func.func
         hint = func.get_return_hint()
         if inspect.isasyncgenfunction(original):
@@ -82,12 +84,17 @@ class ServiceCollection:
             else:
                 interface_w = wrap_type(interface)
                 implementation_w = func_resolver_return
-            return FunctionResolver(scope, fwrap, required=interface_w, registered=implementation_w)
+            resolver = FunctionResolver(scope, fwrap, required=interface_w, registered=implementation_w)
+        else:
+            assert implementation is not None and interface is not None
+            interface_w = wrap_type(interface)
+            implementation_w = wrap_type(implementation)
+            resolver = DefaultResolver(scope, interface_w, implementation_w)
 
-        assert implementation is not None and interface is not None
-        interface_w = wrap_type(interface)
-        implementation_w = wrap_type(implementation)
-        return DefaultResolver(scope, interface_w, implementation_w)
+        if not interface_w.match(implementation_w, match_mode="sub"):
+            raise IncompatibleInterfaceError(str(interface_w), str(implementation_w))
+
+        return resolver
 
     def is_registered[T](self, interface: type[T] | TWrap[T]) -> bool:
         if not isinstance(interface, TWrap):

@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any, NotRequired, Protocol, TypedDict, Unpack,
 
 from peritype import FWrap, TWrap
 
-from soupape.instances import InstancePoolStack
-from soupape.utils import CircularGuard
+from soupape._instances import InstancePoolStack
+from soupape._utils import CircularGuard
 
 if TYPE_CHECKING:
     from soupape import ServiceCollection

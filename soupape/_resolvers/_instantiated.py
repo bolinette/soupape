@@ -3,10 +3,10 @@ from typing import Any, override
 
 from peritype import FWrap, TWrap
 
+from soupape._instances import InstancePoolStack
+from soupape._resolvers import ServiceResolver
+from soupape._types import InjectionContext, InjectionScope, ResolveFunction
 from soupape.errors import ServiceNotFoundError
-from soupape.instances import InstancePoolStack
-from soupape.resolvers import ServiceResolver
-from soupape.types import InjectionContext, InjectionScope, ResolveFunction
 
 
 class InstantiatedResolver[T](ServiceResolver[[], T]):
@@ -31,11 +31,11 @@ class InstantiatedResolver[T](ServiceResolver[[], T]):
 
     @property
     @override
-    def registered(self) -> TWrap[Any]:
-        return self._implementation
+    def registered(self) -> None:
+        return None
 
     @override
-    def get_resolve_hints(self, **kwargs: Any) -> dict[str, TWrap[Any]]:
+    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
