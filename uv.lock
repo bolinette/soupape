@@ -73,6 +73,15 @@ wheels = [
 ]
 
 [[package]]
+name = "escondite"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a9/f3/907a17de810dd3047e93fd699675422e9d00d2db266b2a409301f1a05f53/escondite-0.1.2.tar.gz", hash = "sha256:a567e096b7c25343bb7890b41521668fdbe3fdd76509d9ce2047c1f87d05056d", size = 1999, upload-time = "2026-02-05T20:46:20.112Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/f1/abeee0105c33d8f3ad1792baae8d8016211c1dceb317a7723f37c734c37c/escondite-0.1.2-py3-none-any.whl", hash = "sha256:db0427fd0628874c800b4164333d342a65ad52a0ea006e2387f84755f2fcf0a7", size = 2884, upload-time = "2026-02-05T20:46:21.137Z" },
+]
+
+[[package]]
 name = "hafersack"
 version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -196,9 +205,10 @@ wheels = [
 
 [[package]]
 name = "soupape"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
+    { name = "escondite" },
     { name = "hafersack" },
     { name = "peritype" },
 ]
@@ -215,6 +225,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "escondite", specifier = ">=0.1.2" },
     { name = "hafersack", specifier = ">=0.1.0" },
     { name = "peritype", specifier = "==0.6.0" },
 ]

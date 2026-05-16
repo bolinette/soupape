@@ -5,7 +5,7 @@ from soupape._utils import meta
 
 
 class PostInitMetadata:
-    KEY = "post_init"
+    KEY = "__soupape_post_init__"
 
 
 @overload

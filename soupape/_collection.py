@@ -2,9 +2,11 @@ import inspect
 from collections.abc import AsyncGenerator, AsyncIterable, Generator, Iterable, Iterator
 from typing import Any, overload
 
+from escondite import Cache
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 from peritype.collections import TypeBag, TypeMap
 
+from soupape._decorators import Injectable, InjectableContainer
 from soupape._resolvers import (
     DefaultResolver,
     FunctionResolver,
@@ -20,6 +22,12 @@ class ServiceCollection:
         self._registered_services = TypeBag()
         self._resolvers = TypeMap[Any, ServiceResolver[..., Any]]()
 
+    def __or__(self, other: "ServiceCollection") -> "ServiceCollection":
+        new_collection = self.copy()
+        for resolver in other._resolvers.values():
+            new_collection.add_resolver(resolver)
+        return new_collection
+
     def add_resolver(self, resolver: ServiceResolver[..., Any]) -> None:
         if resolver.required is None:
             raise ValueError("Service resolver must have a required type.")
@@ -27,6 +35,22 @@ class ServiceCollection:
             raise ValueError(f"Service resolver for type {resolver.required} is already registered.")
         self._registered_services.add(resolver.required)
         self._resolvers.add(resolver.required, resolver)
+
+    def add_from_cache(self, cache: Cache) -> None:
+        if Injectable.CACHE_KEY not in cache:
+            return
+        resolvers = cache.get(Injectable.CACHE_KEY, hint=InjectableContainer[Any])
+        for container in resolvers:
+            resolver = container.func
+            match container.scope:
+                case InjectionScope.SINGLETON:
+                    self.add_singleton(resolver)
+                case InjectionScope.SCOPED:
+                    self.add_scoped(resolver)
+                case InjectionScope.TRANSIENT:
+                    self.add_transient(resolver)
+                case _:
+                    raise ValueError(f"Unknown injection scope: {container.scope}")
 
     def _unpack_resolver_function_return(self, func: FWrap[..., Any]) -> TWrap[Any]:
         if not func.is_defined:
@@ -157,6 +181,6 @@ class ServiceCollection:
 
     def copy(self) -> "ServiceCollection":
         new_collection = ServiceCollection()
-        new_collection._registered_services = self._registered_services.copy()
-        new_collection._resolvers = self._resolvers.copy()
+        for resolver in self._resolvers.values():
+            new_collection.add_resolver(resolver)
         return new_collection
