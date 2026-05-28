@@ -1,7 +1,7 @@
 from collections.abc import Generator
 from typing import Any, Self
 
-from peritype import TWrap
+from peritype import TWrap, wrap_type
 
 from soupape import ServiceCollection
 from soupape._instances import InstancePoolStack
@@ -29,6 +29,7 @@ class BaseInjector(Injector):
         self._instance_pool = instance_pool if instance_pool is not None else InstancePoolStack()
         self._generators_to_close: list[Generator[Any]] = []
         self._register_common_resolvers()
+        self._register_base_services()
 
     def _register_common_resolvers(self) -> None:
         if self.is_root_injector:
@@ -36,6 +37,10 @@ class BaseInjector(Injector):
             self._services.add_resolver(WrappedTypeResolver())
             self._services.add_resolver(ListResolver())
             self._services.add_resolver(DictResolver())
+
+    def _register_base_services(self) -> None:
+        if self.is_root_injector:
+            self._instance_pool.set_instance(service_collection_w, self.services)
 
     def _get_injection_context(
         self,
@@ -160,3 +165,6 @@ class BaseInjector(Injector):
             required=context.required,
             registered=resolver.registered,
         )
+
+
+service_collection_w = wrap_type(ServiceCollection)

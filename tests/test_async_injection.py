@@ -1324,3 +1324,21 @@ async def test_register_complex_generic_structure() -> None:
 
         controller_str = await injector.require(Controller[str])
         assert await controller_str.get_data() == "Service2 Data"
+
+
+@pytest.mark.asyncio
+async def test_require_service_collection() -> None:
+
+    class Service:
+        def __init__(self, services: ServiceCollection) -> None:
+            self.services = services
+
+    services = ServiceCollection()
+    services.add_singleton(Service)
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service)
+        assert isinstance(service.services, ServiceCollection)
+        assert service.services is not services
+        assert all(service.services.is_registered(rtype) for rtype in services.registered_types)
+        assert not all(services.is_registered(rtype) for rtype in service.services.registered_types)

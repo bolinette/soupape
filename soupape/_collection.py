@@ -6,7 +6,7 @@ from escondite import Cache
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 from peritype.collections import TypeBag, TypeMap
 
-from soupape._decorators import Injectable, InjectableContainer
+from soupape._decorators._injectable import Injectable, InjectableContainer
 from soupape._resolvers import (
     DefaultResolver,
     FunctionResolver,
