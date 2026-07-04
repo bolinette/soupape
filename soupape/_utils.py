@@ -39,4 +39,4 @@ def add_type_to_type_globals(receiving: type[Any], received: type[Any]) -> None:
     receiving.__init__.__globals__[received.__name__] = received  # type: ignore
 
 
-meta = Hafersack("soupape")
+meta = Hafersack("__soupape__")

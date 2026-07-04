@@ -7,7 +7,7 @@ from typing import Any, override
 import pytest
 from peritype import TWrap, wrap_type
 
-from soupape import AsyncInjector, Injector, ServiceCollection, post_init
+from soupape import AsyncInjector, Injector, ServiceCollection, depends_on, post_init
 from soupape._utils import add_type_to_type_globals
 from soupape.errors import (
     CircularDependencyError,
@@ -1342,3 +1342,26 @@ async def test_require_service_collection() -> None:
         assert service.services is not services
         assert all(service.services.is_registered(rtype) for rtype in services.registered_types)
         assert not all(services.is_registered(rtype) for rtype in service.services.registered_types)
+
+
+@pytest.mark.asyncio
+async def test_require_service_type_with_depends_on() -> None:
+    class Service:
+        def hello(self) -> str:
+            return "hello"
+
+    class Registerer:
+        @post_init
+        def _register_service(self, injector: AsyncInjector) -> None:
+            injector.services.add_singleton(Service)
+
+    depends_on(Service, Registerer)
+
+    services = ServiceCollection()
+    services.add_singleton(Registerer)
+
+    async with AsyncInjector(services) as injector:
+        assert not injector.services.is_registered(Service)
+        service = await injector.require(Service)
+        assert service.hello() == "hello"
+        assert injector.services.is_registered(Service)

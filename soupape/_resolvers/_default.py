@@ -5,7 +5,7 @@ from typing import Any, override
 
 from peritype import FWrap, TWrap
 
-from soupape._post_init import PostInitMetadata
+from soupape._decorators._post_init import PostInitMetadata
 from soupape._resolvers import ServiceResolver
 from soupape._types import (
     AsyncContextManager,
