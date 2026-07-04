@@ -1,9 +1,11 @@
-from collections.abc import Generator
-from typing import Any, Self
+import itertools
+from collections.abc import Generator, Iterable
+from typing import Any, Self, get_origin
 
 from peritype import TWrap, wrap_type
 
 from soupape import ServiceCollection
+from soupape._decorators._depends_on import ServiceDependencyMetadata
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import (
     DependencyTreeNode,
@@ -19,7 +21,7 @@ from soupape._types import (
     InjectionScope,
     Injector,
 )
-from soupape._utils import CircularGuard
+from soupape._utils import CircularGuard, meta
 from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
 
 
@@ -165,6 +167,18 @@ class BaseInjector(Injector):
             required=context.required,
             registered=resolver.registered,
         )
+
+    def _get_depends_on_services(self, interface: TWrap[Any]) -> Iterable[type[Any]]:
+        deps: Iterable[type[Any]] = []
+        if meta.has(interface.origin, ServiceDependencyMetadata.KEY):
+            deps_meta: ServiceDependencyMetadata = meta.get(interface.origin, ServiceDependencyMetadata.KEY)
+            deps = itertools.chain(deps, deps_meta)
+        if (interface_origin := get_origin(interface.origin)) is not None and meta.has(
+            interface_origin, ServiceDependencyMetadata.KEY
+        ):
+            deps_meta: ServiceDependencyMetadata = meta.get(interface_origin, ServiceDependencyMetadata.KEY)
+            deps = itertools.chain(deps, deps_meta)
+        return deps
 
 
 service_collection_w = wrap_type(ServiceCollection)

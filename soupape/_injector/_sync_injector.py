@@ -5,7 +5,6 @@ from typing import Any, Unpack, cast, overload
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
 from soupape._collection import ServiceCollection
-from soupape._decorators._depends_on import ServiceDependencyMetadata
 from soupape._injector import BaseInjector
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import DependencyTreeNode, FunctionResolver
@@ -15,7 +14,7 @@ from soupape._types import (
     Injector,
     InjectorCallArgs,
 )
-from soupape._utils import CircularGuard, meta
+from soupape._utils import CircularGuard
 from soupape.errors import AsyncInSyncInjectorError
 
 
@@ -77,10 +76,7 @@ class SyncInjector(BaseInjector, Injector):
         return self._require(twrap, CircularGuard())
 
     def _resolve_depends_on_services(self, interface: TWrap[Any], circular_guard: CircularGuard) -> None:
-        if not meta.has(interface.origin, ServiceDependencyMetadata.KEY):
-            return None
-        deps_meta: ServiceDependencyMetadata = meta.get(interface.origin, ServiceDependencyMetadata.KEY)
-        for dep_type in deps_meta:
+        for dep_type in self._get_depends_on_services(interface):
             self._require(wrap_type(dep_type), circular_guard)
 
     def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T:

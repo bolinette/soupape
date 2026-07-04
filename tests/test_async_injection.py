@@ -1328,7 +1328,6 @@ async def test_register_complex_generic_structure() -> None:
 
 @pytest.mark.asyncio
 async def test_require_service_collection() -> None:
-
     class Service:
         def __init__(self, services: ServiceCollection) -> None:
             self.services = services
@@ -1364,4 +1363,30 @@ async def test_require_service_type_with_depends_on() -> None:
         assert not injector.services.is_registered(Service)
         service = await injector.require(Service)
         assert service.hello() == "hello"
+        assert injector.services.is_registered(Service)
+
+
+@pytest.mark.asyncio
+async def test_require_generic_service_type_with_depends_on() -> None:
+    class Service[T]:
+        def __init__(self, t: type[T]) -> None:
+            self.t = t
+
+        def hello(self) -> type[T]:
+            return self.t
+
+    class Registerer:
+        @post_init
+        def _register_service(self, injector: AsyncInjector) -> None:
+            injector.services.add_singleton(Service)
+
+    depends_on(Service, Registerer)
+
+    services = ServiceCollection()
+    services.add_singleton(Registerer)
+
+    async with AsyncInjector(services) as injector:
+        assert not injector.services.is_registered(Service)
+        service = await injector.require(Service[int])
+        assert service.hello() is int
         assert injector.services.is_registered(Service)
