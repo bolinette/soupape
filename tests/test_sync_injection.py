@@ -865,6 +865,19 @@ def test_require_two_generic_type_in_resolver() -> None:
         assert service.cls2 is int
 
 
+def test_require_lambda_resolver() -> None:
+    class Service:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    services = ServiceCollection()
+    services.add_singleton(Service, lambda: Service(42))
+
+    with SyncInjector(services) as injector:
+        service = injector.require(Service)
+        assert service.value == 42
+
+
 def test_fail_circular_dependency() -> None:
     services = ServiceCollection()
 

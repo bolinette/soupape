@@ -63,3 +63,11 @@ class IncompatibleInterfaceError(SoupapeError):
         )
         self.interface = interface
         self.implementation = implementation
+
+
+class MissingInterfaceError(SoupapeError):
+    def __init__(self, func: Callable[..., Any]) -> None:
+        super().__init__(
+            "soupape.interface.missing",
+            f"Interface missing for resolver {func}, no return annotation found",
+        )

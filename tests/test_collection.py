@@ -2,7 +2,7 @@ import pytest
 from escondite import Cache
 
 from soupape import ServiceCollection, injectable
-from soupape.errors import IncompatibleInterfaceError
+from soupape.errors import IncompatibleInterfaceError, MissingInterfaceError
 
 
 def test_service_registration() -> None:
@@ -104,3 +104,30 @@ def test_use_decorate_service() -> None:
     services.add_from_cache(cache)
 
     assert services.is_registered(Service)
+
+
+def test_lambda_resolver() -> None:
+    services = ServiceCollection()
+
+    class Service:
+        pass
+
+    services.add_singleton(Service, lambda: Service())
+
+    assert services.is_registered(Service)
+
+
+def test_fail_lambda_resolver_no_interface() -> None:
+    services = ServiceCollection()
+
+    class Service:
+        pass
+
+    with pytest.raises(MissingInterfaceError) as exc_info:
+        services.add_singleton(lambda: Service())
+
+    assert (
+        exc_info.value.message
+        == "Interface missing for resolver test_fail_lambda_resolver_no_interface.<locals>.<lambda>,"
+        " no return annotation found"
+    )

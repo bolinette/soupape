@@ -1089,6 +1089,20 @@ async def test_require_two_generic_type_in_resolver() -> None:
 
 
 @pytest.mark.asyncio
+async def test_require_lambda_resolver() -> None:
+    class Service:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    services = ServiceCollection()
+    services.add_singleton(Service, lambda: Service(42))
+
+    async with AsyncInjector(services) as injector:
+        service = await injector.require(Service)
+        assert service.value == 42
+
+
+@pytest.mark.asyncio
 async def test_fail_circular_dependency() -> None:
     services = ServiceCollection()
 

@@ -14,7 +14,7 @@ from soupape._resolvers import (
 )
 from soupape._types import InjectionScope, ResolveFunction
 from soupape._utils import is_type_like
-from soupape.errors import IncompatibleInterfaceError, ServiceNotFoundError
+from soupape.errors import IncompatibleInterfaceError, MissingInterfaceError, ServiceNotFoundError
 
 
 class ServiceCollection:
@@ -52,11 +52,14 @@ class ServiceCollection:
                 case _:
                     raise ValueError(f"Unknown injection scope: {container.scope}")
 
-    def _unpack_resolver_function_return(self, func: FWrap[..., Any]) -> TWrap[Any]:
+    def _unpack_resolver_function_return(self, func: FWrap[..., Any]) -> TWrap[Any] | None:
         if not func.is_defined:
             func = func.unspecialize()
         original = func.func
-        hint = func.get_return_hint()
+        try:
+            hint = func.get_return_hint()
+        except KeyError:
+            return None
         if inspect.isasyncgenfunction(original):
             if hint.match(AsyncGenerator[Any, Any] | AsyncIterable[Any]):
                 return hint.generic_params[0]
@@ -103,11 +106,13 @@ class ServiceCollection:
                 fwrap = wrap_func(func_resolver.__call__)
             func_resolver_return = self._unpack_resolver_function_return(fwrap)
             if interface is None:
+                if func_resolver_return is None:
+                    raise MissingInterfaceError(fwrap)
                 interface_w = func_resolver_return
                 implementation_w = func_resolver_return
             else:
                 interface_w = wrap_type(interface)
-                implementation_w = func_resolver_return
+                implementation_w = func_resolver_return or interface_w
             resolver = FunctionResolver(scope, fwrap, required=interface_w, registered=implementation_w)
         else:
             assert implementation is not None and interface is not None
