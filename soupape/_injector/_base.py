@@ -1,15 +1,16 @@
-import itertools
 from collections.abc import Generator, Iterable
-from typing import Any, Self, get_origin
+from typing import Any, Self
 
-from peritype import TWrap, wrap_type
+from peritype import FWrap, TWrap, wrap_type
 
 from soupape import ServiceCollection
+from soupape._decorators import get_custom_resolver
 from soupape._decorators._depends_on import ServiceDependencyMetadata
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import (
     DependencyTreeNode,
     DictResolver,
+    FunctionResolver,
     InstantiatedResolver,
     ListResolver,
     RawTypeResolver,
@@ -21,7 +22,7 @@ from soupape._types import (
     InjectionScope,
     Injector,
 )
-from soupape._utils import CircularGuard, meta
+from soupape._utils import CircularGuard, accumulate_meta_on_twrap
 from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
 
 
@@ -116,6 +117,8 @@ class BaseInjector(Injector):
         return InstantiatedResolver(interface, implementation or interface)
 
     def _get_service_resolver(self, interface: TWrap[Any]) -> ServiceResolver[..., Any]:
+        if (resolv_meta := get_custom_resolver(interface)) is not None:
+            return resolv_meta
         if self._services.is_registered(interface):
             resolver = self._services.get_resolver(interface)
             registered = resolver.registered
@@ -125,6 +128,11 @@ class BaseInjector(Injector):
         if self._has_instance(interface):
             return self._make_instantiated_resolver(interface)
         raise ServiceNotFoundError(str(interface))
+
+    def _get_function_resolver(self, fwrap: FWrap[..., Any]) -> ServiceResolver[..., Any]:
+        if (resolv_meta := get_custom_resolver(fwrap)) is not None:
+            return resolv_meta
+        return FunctionResolver(InjectionScope.IMMEDIATE, fwrap)
 
     def _build_dependency_tree(
         self,
@@ -149,7 +157,11 @@ class BaseInjector(Injector):
             if param_name not in hints:
                 raise MissingTypeHintError(param_name, resolver.name)
             hint = hints[param_name]
-            hint_resolver = self._get_service_resolver(hint)
+            if isinstance(hint, ServiceResolver):
+                hint_resolver = hint
+                hint = hint_resolver.required
+            else:
+                hint_resolver = self._get_service_resolver(hint)
             dep_node = self._build_dependency_tree(
                 context.new_required(hint_resolver.scope, hint),
                 hint_resolver,
@@ -169,16 +181,7 @@ class BaseInjector(Injector):
         )
 
     def _get_depends_on_services(self, interface: TWrap[Any]) -> Iterable[type[Any]]:
-        deps: Iterable[type[Any]] = []
-        if meta.has(interface.origin, ServiceDependencyMetadata.KEY):
-            deps_meta: ServiceDependencyMetadata = meta.get(interface.origin, ServiceDependencyMetadata.KEY)
-            deps = itertools.chain(deps, deps_meta)
-        if (interface_origin := get_origin(interface.origin)) is not None and meta.has(
-            interface_origin, ServiceDependencyMetadata.KEY
-        ):
-            deps_meta: ServiceDependencyMetadata = meta.get(interface_origin, ServiceDependencyMetadata.KEY)
-            deps = itertools.chain(deps, deps_meta)
-        return deps
+        return accumulate_meta_on_twrap(interface, ServiceDependencyMetadata.KEY, lambda: [])
 
 
 service_collection_w = wrap_type(ServiceCollection)

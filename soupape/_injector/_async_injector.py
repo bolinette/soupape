@@ -7,7 +7,7 @@ from peritype import FWrap, TWrap, wrap_func, wrap_type
 from soupape._collection import ServiceCollection
 from soupape._injector import BaseInjector
 from soupape._instances import InstancePoolStack
-from soupape._resolvers import DependencyTreeNode, FunctionResolver
+from soupape._resolvers import DependencyTreeNode
 from soupape._types import (
     InjectionContext,
     InjectionScope,
@@ -152,7 +152,7 @@ class AsyncInjector(BaseInjector, Injector):
             circular_guard=kwargs.get("circular_guard"),
             positional_args=kwargs.get("positional_args"),
         )
-        resolver = FunctionResolver(InjectionScope.IMMEDIATE, fwrap)
+        resolver = self._get_function_resolver(fwrap)
         dep_node = self._build_dependency_tree(context.copy(), resolver)
         return await self._resolve_service(context.copy(), dep_node)
 

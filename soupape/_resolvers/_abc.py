@@ -1,5 +1,6 @@
 import inspect
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,7 +32,9 @@ class ServiceResolver[**P, T](ABC):
     def registered(self) -> TWrap[Any] | None: ...
 
     @abstractmethod
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]: ...
+    def get_resolve_hints(
+        self, context: InjectionContext
+    ) -> "Mapping[str, TWrap[Any] | ServiceResolver[..., Any]]": ...
 
     @abstractmethod
     def get_instance_function(self) -> FWrap[P, T]: ...

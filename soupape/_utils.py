@@ -1,8 +1,9 @@
-from collections.abc import Callable
+import itertools
+from collections.abc import Callable, Iterable
 from typing import Any, TypeGuard, get_origin
 
 from hafersack import Hafersack
-from peritype import FWrap
+from peritype import FWrap, TWrap
 
 from soupape.errors import CircularDependencyError
 
@@ -37,6 +38,43 @@ def add_type_to_type_globals(receiving: type[Any], received: type[Any]) -> None:
     This is useful when using classes defined in a local scope.
     """
     receiving.__init__.__globals__[received.__name__] = received  # type: ignore
+
+
+def get_meta_on_twrap[T](
+    interface: TWrap[Any],
+    key: str,
+    hint: type[T],
+    default: T | None,
+) -> T | None:
+    if meta.has(interface.origin, key):
+        return meta.get(interface.origin, key)
+    if (interface_origin := get_origin(interface.origin)) is not None and meta.has(interface_origin, key):
+        return meta.get(interface_origin, key)
+    return default
+
+
+def get_meta_on_fwrap[**P, T](
+    func: FWrap[P, T],
+    key: str,
+    hint: type[T],
+    default: T | None,
+) -> T | None:
+    if meta.has(func.func, key):
+        return meta.get(func.func, key)
+    if (func_origin := get_origin(func.func)) is not None and meta.has(func_origin, key):
+        return meta.get(func_origin, key)
+    return default
+
+
+def accumulate_meta_on_twrap[T](interface: TWrap[Any], key: str, factory: Callable[[], Iterable[T]]) -> Iterable[T]:
+    meta_list = factory()
+    if meta.has(interface.origin, key):
+        deps_meta: Iterable[T] = meta.get(interface.origin, key)
+        meta_list = itertools.chain(meta_list, deps_meta)
+    if (interface_origin := get_origin(interface.origin)) is not None and meta.has(interface_origin, key):
+        deps_meta: Iterable[T] = meta.get(interface_origin, key)
+        meta_list = itertools.chain(meta_list, deps_meta)
+    return meta_list
 
 
 meta = Hafersack("__soupape__")

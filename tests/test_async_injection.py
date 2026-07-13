@@ -1,13 +1,25 @@
 import asyncio
+import inspect
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from types import TracebackType
 from typing import Any, override
 
 import pytest
-from peritype import TWrap, wrap_type
+from peritype import FWrap, TWrap, wrap_func, wrap_type
 
-from soupape import AsyncInjector, Injector, ServiceCollection, depends_on, post_init
+from soupape import (
+    AsyncInjector,
+    InjectionContext,
+    InjectionScope,
+    Injector,
+    ResolveFunction,
+    ServiceCollection,
+    ServiceResolver,
+    depends_on,
+    post_init,
+    resolver,
+)
 from soupape._utils import add_type_to_type_globals
 from soupape.errors import (
     CircularDependencyError,
@@ -1404,3 +1416,239 @@ async def test_require_generic_service_type_with_depends_on() -> None:
         service = await injector.require(Service[int])
         assert service.hello() is int
         assert injector.services.is_registered(Service)
+
+
+@pytest.mark.asyncio
+async def test_custom_resolver_for_class_service() -> None:
+    class CommandRunArgs:
+        def __init__(self, numbers: Sequence[int]) -> None:
+            self.number = numbers
+
+    class CustomArgResolver(ServiceResolver[..., Any]):
+        def __init__(self, name: str, position: int) -> None:
+            super().__init__()
+            self.arg_name = name
+            self.position = position
+            self.func = self._build_new_signature()
+
+        @staticmethod
+        def _build_new_signature() -> FWrap[..., Any]:
+            def _new_func(run_args: CommandRunArgs): ...
+
+            return wrap_func(_new_func)
+
+        @property
+        @override
+        def name(self) -> str:
+            return f"Argument-{self.name}-{self.position}"
+
+        @property
+        @override
+        def scope(self) -> InjectionScope:
+            return InjectionScope.SINGLETON
+
+        @property
+        @override
+        def required(self) -> TWrap[Any] | None:
+            return None
+
+        @property
+        @override
+        def registered(self) -> TWrap[Any] | None:
+            return None
+
+        @override
+        def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+            return {"run_args": wrap_type(CommandRunArgs)}
+
+        @override
+        def get_instance_function(self) -> FWrap[..., Any]:
+            return self.func
+
+        @override
+        def get_resolve_signature(self) -> inspect.Signature:
+            return self.func.signature
+
+        @override
+        def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+            def resolve(run_args: CommandRunArgs) -> Any:
+                return run_args.number[self.position]
+
+            return resolve
+
+    class CustomCommandResolver(ServiceResolver[..., Any]):
+        def __init__(self, cls: type[Any]) -> None:
+            super().__init__()
+            self.twrap = wrap_type(cls)
+            self.func = wrap_func(cls)
+
+        @property
+        @override
+        def name(self) -> str:
+            return str(self.twrap)
+
+        @property
+        @override
+        def scope(self) -> InjectionScope:
+            return InjectionScope.SINGLETON
+
+        @property
+        @override
+        def required(self) -> TWrap[Any] | None:
+            return None
+
+        @property
+        @override
+        def registered(self) -> TWrap[Any] | None:
+            return None
+
+        @override
+        def get_resolve_hints(self, context: InjectionContext) -> dict[str, ServiceResolver[..., Any]]:
+            return {a: CustomArgResolver(a, i) for i, a in enumerate(self.func.parameters)}
+
+        @override
+        def get_instance_function(self) -> FWrap[..., Any]:
+            return self.func
+
+        @override
+        def get_resolve_signature(self) -> inspect.Signature:
+            return self.func.signature
+
+        @override
+        def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+            def resolve(*args: Any, **kwargs: Any) -> Any:
+                return self.twrap.instantiate(*args, **kwargs)
+
+            return resolve
+
+    class CustomIntCommand:
+        def __init__(self, a: int, b: int) -> None:
+            self.a = a
+            self.b = b
+
+        def compute(self) -> int:
+            return self.a + self.b
+
+    resolver(CustomIntCommand, CustomCommandResolver(CustomIntCommand))
+
+    services = ServiceCollection()
+
+    async with AsyncInjector(services) as injector:
+        injector.services.add_scoped(CommandRunArgs, lambda: CommandRunArgs([2, 3]))
+        command = await injector.require(CustomIntCommand)
+        assert command.compute() == 5
+
+
+@pytest.mark.asyncio
+async def test_custom_resolver_for_function() -> None:
+    class CommandRunArgs:
+        def __init__(self, numbers: Sequence[int]) -> None:
+            self.number = numbers
+
+    class CustomArgResolver(ServiceResolver[..., Any]):
+        def __init__(self, name: str, position: int) -> None:
+            super().__init__()
+            self.arg_name = name
+            self.position = position
+            self.func = self._build_new_signature()
+
+        @staticmethod
+        def _build_new_signature() -> FWrap[..., Any]:
+            def _new_func(run_args: CommandRunArgs): ...
+
+            return wrap_func(_new_func)
+
+        @property
+        @override
+        def name(self) -> str:
+            return f"Argument-{self.name}-{self.position}"
+
+        @property
+        @override
+        def scope(self) -> InjectionScope:
+            return InjectionScope.SINGLETON
+
+        @property
+        @override
+        def required(self) -> TWrap[Any] | None:
+            return None
+
+        @property
+        @override
+        def registered(self) -> TWrap[Any] | None:
+            return None
+
+        @override
+        def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+            return {"run_args": wrap_type(CommandRunArgs)}
+
+        @override
+        def get_instance_function(self) -> FWrap[..., Any]:
+            return self.func
+
+        @override
+        def get_resolve_signature(self) -> inspect.Signature:
+            return self.func.signature
+
+        @override
+        def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+            def resolve(run_args: CommandRunArgs) -> Any:
+                return run_args.number[self.position]
+
+            return resolve
+
+    class CustomCommandResolver(ServiceResolver[..., Any]):
+        def __init__(self, func: Callable[..., Any]) -> None:
+            super().__init__()
+            self.func = wrap_func(func)
+
+        @property
+        @override
+        def name(self) -> str:
+            return str(self.func)
+
+        @property
+        @override
+        def scope(self) -> InjectionScope:
+            return InjectionScope.SINGLETON
+
+        @property
+        @override
+        def required(self) -> TWrap[Any] | None:
+            return None
+
+        @property
+        @override
+        def registered(self) -> TWrap[Any] | None:
+            return None
+
+        @override
+        def get_resolve_hints(self, context: InjectionContext) -> dict[str, ServiceResolver[..., Any]]:
+            return {a: CustomArgResolver(a, i) for i, a in enumerate(self.func.parameters)}
+
+        @override
+        def get_instance_function(self) -> FWrap[..., Any]:
+            return self.func
+
+        @override
+        def get_resolve_signature(self) -> inspect.Signature:
+            return self.func.signature
+
+        @override
+        def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+            def resolve(*args: Any, **kwargs: Any) -> Any:
+                return self.func(*args, **kwargs)
+
+            return resolve
+
+    def custom_int_command(a: int, b: int) -> int:
+        return a + b
+
+    resolver(custom_int_command, CustomCommandResolver(custom_int_command))
+
+    services = ServiceCollection()
+
+    async with AsyncInjector(services) as injector:
+        injector.services.add_scoped(CommandRunArgs, lambda: CommandRunArgs([2, 3]))
+        result = await injector.call(custom_int_command)
+        assert result == 5
