@@ -8,18 +8,7 @@ from typing import Any, override
 import pytest
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
-from soupape import (
-    AsyncInjector,
-    InjectionContext,
-    InjectionScope,
-    Injector,
-    ResolveFunction,
-    ServiceCollection,
-    ServiceResolver,
-    depends_on,
-    post_init,
-    resolver,
-)
+from soupape import AsyncInjector, Injector, ServiceCollection, depends_on, post_init
 from soupape._utils import add_type_to_type_globals
 from soupape.errors import (
     CircularDependencyError,
@@ -27,6 +16,7 @@ from soupape.errors import (
     ScopedServiceNotAvailableError,
     ServiceNotFoundError,
 )
+from soupape.resolvers import InjectionContext, InjectionScope, ResolveFunction, ServiceResolver, resolver
 
 
 @pytest.mark.asyncio

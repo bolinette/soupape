@@ -8,17 +8,7 @@ from typing import Any, override
 import pytest
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
-from soupape import (
-    InjectionContext,
-    InjectionScope,
-    Injector,
-    ResolveFunction,
-    ServiceCollection,
-    ServiceResolver,
-    SyncInjector,
-    post_init,
-    resolver,
-)
+from soupape import Injector, ServiceCollection, SyncInjector, post_init
 from soupape._utils import add_type_to_type_globals
 from soupape.errors import (
     AsyncInSyncInjectorError,
@@ -27,6 +17,7 @@ from soupape.errors import (
     ScopedServiceNotAvailableError,
     ServiceNotFoundError,
 )
+from soupape.resolvers import InjectionContext, InjectionScope, ResolveFunction, ServiceResolver, resolver
 
 
 def test_sync_inject() -> None:
