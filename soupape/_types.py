@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, 
 from dataclasses import dataclass
 from enum import Enum, auto, unique
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
+from typing import TYPE_CHECKING, Any, Never, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
 
 from peritype import FWrap, TWrap
 
@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 
 type ResolveFunction[**P, T] = (
     Callable[P, T]
-    | Callable[P, Generator[T]]
+    | Callable[P, Generator[T, Never, Any]]
     | Callable[P, Iterable[T]]
-    | Callable[P, AsyncGenerator[T]]
+    | Callable[P, AsyncGenerator[T, Never]]
     | Callable[P, AsyncIterable[T]]
     | Callable[P, Coroutine[Any, Any, T]]
     | Callable[P, Awaitable[T]]

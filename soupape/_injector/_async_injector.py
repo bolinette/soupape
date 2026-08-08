@@ -1,6 +1,6 @@
 import inspect
 from collections.abc import AsyncGenerator, Callable, Coroutine
-from typing import Any, Self, Unpack, cast, overload
+from typing import Any, Never, Self, Unpack, cast, overload
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
@@ -20,7 +20,7 @@ from soupape._utils import CircularGuard
 class AsyncInjector(BaseInjector, Injector):
     def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
         super().__init__(services, instance_pool)
-        self._async_generators_to_close: list[AsyncGenerator[Any]] = []
+        self._async_generators_to_close: list[AsyncGenerator[Any, Never]] = []
         self._set_injector_in_services()
 
     @property

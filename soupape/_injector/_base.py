@@ -1,5 +1,5 @@
 from collections.abc import Generator, Iterable
-from typing import Any, Self
+from typing import Any, Never, Self
 
 from peritype import FWrap, TWrap, wrap_type
 
@@ -30,7 +30,7 @@ class BaseInjector(Injector):
     def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
         self._services = services.copy()
         self._instance_pool = instance_pool if instance_pool is not None else InstancePoolStack()
-        self._generators_to_close: list[Generator[Any]] = []
+        self._generators_to_close: list[Generator[Any, Never, Any]] = []
         self._register_common_resolvers()
         self._register_base_services()
 
