@@ -11,17 +11,14 @@ from soupape._resolvers import (
     DependencyTreeNode,
     DictResolver,
     FunctionResolver,
+    InjectionContextResolver,
     InstantiatedResolver,
     ListResolver,
     RawTypeResolver,
     ServiceResolver,
     WrappedTypeResolver,
 )
-from soupape._types import (
-    InjectionContext,
-    InjectionScope,
-    Injector,
-)
+from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
 from soupape._utils import CircularGuard, accumulate_meta_on_twrap
 from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
 
@@ -40,6 +37,7 @@ class BaseInjector(Injector):
             self._services.add_resolver(WrappedTypeResolver())
             self._services.add_resolver(ListResolver())
             self._services.add_resolver(DictResolver())
+            self._services.add_resolver(InjectionContextResolver())
 
     def _register_base_services(self) -> None:
         if self.is_root_injector:
@@ -162,8 +160,9 @@ class BaseInjector(Injector):
                 hint = hint_resolver.required
             else:
                 hint_resolver = self._get_service_resolver(hint)
+            sub_call_ctx = CallerContext(param_name=param_name, caller=resolver.get_instance_function())
             dep_node = self._build_dependency_tree(
-                context.new_required(hint_resolver.scope, hint),
+                context.new_required(hint_resolver.scope, hint, sub_call_ctx),
                 hint_resolver,
             )
             if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
@@ -178,6 +177,7 @@ class BaseInjector(Injector):
             resolver=resolver,
             required=context.required,
             registered=resolver.registered,
+            caller_context=context.caller_context,
         )
 
     def _get_depends_on_services(self, interface: TWrap[Any]) -> Iterable[type[Any]]:

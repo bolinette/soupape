@@ -63,12 +63,18 @@ class AsyncInjector(BaseInjector, Injector):
             for arg in context.positional_args:
                 resolved_args.append(arg)
         for arg in dep_node.args:
-            resolved_arg = await self._resolve_service(context.new_required(dep_node.scope, arg.required), arg)
+            resolved_arg = await self._resolve_service(
+                context.new_required(dep_node.scope, arg.required, dep_node.caller_context),
+                arg,
+            )
             resolved_args.append(resolved_arg)
 
         resolved_kwargs: dict[str, Any] = {}
         for kwarg_name, kwarg in dep_node.kwargs.items():
-            resolved_kwarg = await self._resolve_service(context.new_required(dep_node.scope, kwarg.required), kwarg)
+            resolved_kwarg = await self._resolve_service(
+                context.new_required(dep_node.scope, kwarg.required, dep_node.caller_context),
+                kwarg,
+            )
             resolved_kwargs[kwarg_name] = resolved_kwarg
 
         resolver = dep_node.resolver.get_resolve_func(context)

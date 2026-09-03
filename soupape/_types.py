@@ -58,7 +58,13 @@ class InjectionScope(Enum):
     IMMEDIATE = auto()
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, frozen=True, slots=True)
+class CallerContext:
+    caller: FWrap[..., Any]
+    param_name: str
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
 class InjectionContext:
     injector: Injector
     origin: TWrap[Any] | None
@@ -66,11 +72,13 @@ class InjectionContext:
     circular_guard: CircularGuard
     required: TWrap[Any] | None
     positional_args: list[Any] | None = None
+    caller_context: CallerContext | None = None
 
     def new_required(
         self,
         scope: "InjectionScope",
         required: TWrap[Any] | None,
+        caller_context: CallerContext | None = None,
     ) -> "InjectionContext":
         return InjectionContext(
             injector=self.injector,
@@ -79,6 +87,7 @@ class InjectionContext:
             circular_guard=self.circular_guard.copy(),
             required=required,
             positional_args=None,
+            caller_context=caller_context,
         )
 
     def copy(
@@ -91,6 +100,7 @@ class InjectionContext:
             circular_guard=self.circular_guard.copy(),
             required=self.required,
             positional_args=self.positional_args,
+            caller_context=self.caller_context,
         )
 
 

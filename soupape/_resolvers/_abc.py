@@ -6,7 +6,7 @@ from typing import Any
 
 from peritype import FWrap, TWrap, wrap_func
 
-from soupape._types import InjectionContext, InjectionScope, ResolveFunction
+from soupape._types import CallerContext, InjectionContext, InjectionScope, ResolveFunction
 
 
 class ServiceResolver[**P, T](ABC):
@@ -46,7 +46,7 @@ class ServiceResolver[**P, T](ABC):
     def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[P, T]: ...
 
 
-@dataclass(kw_only=True)
+@dataclass(kw_only=True, frozen=True, slots=True)
 class DependencyTreeNode[**P, T]:
     scope: InjectionScope
     args: "list[DependencyTreeNode[..., Any]]"
@@ -54,3 +54,4 @@ class DependencyTreeNode[**P, T]:
     resolver: ServiceResolver[P, T]
     required: TWrap[T] | None
     registered: TWrap[Any] | None
+    caller_context: CallerContext | None

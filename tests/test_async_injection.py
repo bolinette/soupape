@@ -1642,3 +1642,28 @@ async def test_custom_resolver_for_function() -> None:
         injector.services.add_scoped(CommandRunArgs, lambda: CommandRunArgs([2, 3]))
         result = await injector.call(custom_int_command)
         assert result == 5
+
+
+@pytest.mark.asyncio
+async def test_require_injection_context() -> None:
+    services = ServiceCollection()
+
+    class Service1:
+        def __init__(self, ctx: InjectionContext) -> None:
+            self.ctx = ctx
+
+    class Service2:
+        def __init__(self, s1: Service1, ctx: InjectionContext) -> None:
+            self.s1 = s1
+            self.ctx = ctx
+
+    services.add_scoped(Service1)
+    services.add_scoped(Service2)
+
+    async with AsyncInjector(services).get_scoped_injector() as injector:
+        s2 = await injector.require(Service2)
+        assert s2.ctx is not s2.s1.ctx
+        assert s2.ctx.caller_context is None
+        assert s2.s1.ctx.caller_context is not None
+        assert s2.s1.ctx.caller_context.param_name == "s1"
+        assert s2.s1.ctx.caller_context.caller.func is Service2.__init__

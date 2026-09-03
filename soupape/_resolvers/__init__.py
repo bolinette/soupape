@@ -13,3 +13,4 @@ from soupape._resolvers._collections import (
     ListResolver as ListResolver,
     DictResolver as DictResolver,
 )
+from soupape._resolvers._context import InjectionContextResolver as InjectionContextResolver
