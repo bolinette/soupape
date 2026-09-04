@@ -6,6 +6,7 @@ from peritype import FWrap, TWrap, wrap_type
 from soupape import ServiceCollection
 from soupape._decorators import get_custom_resolver
 from soupape._decorators._depends_on import ServiceDependencyMetadata
+from soupape._extensions import get_annotated_resolver
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import (
     DependencyTreeNode,
@@ -114,7 +115,14 @@ class BaseInjector(Injector):
     ) -> ServiceResolver[..., Any]:
         return InstantiatedResolver(interface, implementation or interface)
 
-    def _get_service_resolver(self, interface: TWrap[Any]) -> ServiceResolver[..., Any]:
+    def _get_service_resolver(
+        self,
+        interface: TWrap[Any],
+        *,
+        scope: InjectionScope = InjectionScope.IMMEDIATE,
+    ) -> ServiceResolver[..., Any]:
+        if (annotated := get_annotated_resolver(interface, scope)) is not None:
+            return annotated
         if (resolv_meta := get_custom_resolver(interface)) is not None:
             return resolv_meta
         if self._services.is_registered(interface):
@@ -159,7 +167,7 @@ class BaseInjector(Injector):
                 hint_resolver = hint
                 hint = hint_resolver.required
             else:
-                hint_resolver = self._get_service_resolver(hint)
+                hint_resolver = self._get_service_resolver(hint, scope=context.scope)
             sub_call_ctx = CallerContext(param_name=param_name, caller=resolver.get_instance_function())
             dep_node = self._build_dependency_tree(
                 context.new_required(hint_resolver.scope, hint, sub_call_ctx),

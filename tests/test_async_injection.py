@@ -3,7 +3,7 @@ import inspect
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from types import TracebackType
-from typing import Any, override
+from typing import Annotated, Any, override
 
 import pytest
 from peritype import FWrap, TWrap, wrap_func, wrap_type
@@ -16,7 +16,14 @@ from soupape.errors import (
     ScopedServiceNotAvailableError,
     ServiceNotFoundError,
 )
-from soupape.resolvers import InjectionContext, InjectionScope, ResolveFunction, ServiceResolver, resolver
+from soupape.resolvers import (
+    InjectionContext,
+    InjectionScope,
+    ResolveFunction,
+    ServiceResolver,
+    make_annotated_resolver,
+    resolver,
+)
 
 
 @pytest.mark.asyncio
@@ -1667,3 +1674,90 @@ async def test_require_injection_context() -> None:
         assert s2.s1.ctx.caller_context is not None
         assert s2.s1.ctx.caller_context.param_name == "s1"
         assert s2.s1.ctx.caller_context.caller.func is Service2.__init__
+
+
+@pytest.mark.asyncio
+async def test_annotated_resolver_from_class() -> None:
+    services = ServiceCollection()
+
+    class Database:
+        async def data(self) -> int:
+            return 42
+
+    class Service1:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    class Service1Resolver:
+        async def __resolve__(self, db: Database) -> Service1:
+            return Service1(await db.data())
+
+    class Service2:
+        def __init__(self, s1: Annotated[Service1, Service1Resolver()]) -> None:
+            self.s1 = s1
+
+    services.add_singleton(Database)
+    services.add_scoped(Service1)
+    services.add_scoped(Service2)
+
+    async with AsyncInjector(services).get_scoped_injector() as injector:
+        s2 = await injector.require(Service2)
+        assert s2.s1.value == 42
+
+
+@pytest.mark.asyncio
+async def test_annotated_resolver_from_function() -> None:
+    services = ServiceCollection()
+
+    class Database:
+        async def data(self) -> int:
+            return 42
+
+    class Service:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    class ServiceResolver:
+        async def __resolve__(self, db: Database) -> Service:
+            return Service(await db.data())
+
+    def call_service(service: Annotated[Service, ServiceResolver()]) -> int:
+        return service.value + 1
+
+    services.add_singleton(Database)
+    services.add_scoped(Service)
+
+    async with AsyncInjector(services).get_scoped_injector() as injector:
+        result = await injector.call(call_service)
+        assert result == 43
+
+
+@pytest.mark.asyncio
+async def test_annotated_resolver_of_random_class() -> None:
+    services = ServiceCollection()
+
+    class Database:
+        async def data(self) -> int:
+            return 42
+
+    class Service1:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    class RandomAnnotation: ...
+
+    async def resolve_service(_self: RandomAnnotation, db: Database) -> Service1:
+        return Service1(await db.data())
+
+    class Service2:
+        def __init__(self, s1: Annotated[Service1, RandomAnnotation()]) -> None:
+            self.s1 = s1
+
+    services.add_singleton(Database)
+    services.add_scoped(Service1)
+    services.add_scoped(Service2)
+    make_annotated_resolver(RandomAnnotation, resolve_service)
+
+    async with AsyncInjector(services).get_scoped_injector() as injector:
+        s2 = await injector.require(Service2)
+        assert s2.s1.value == 42
