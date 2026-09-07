@@ -6,7 +6,7 @@ from peritype import FWrap, TWrap
 
 from soupape._resolvers import ServiceResolver
 from soupape._resolvers._utils import dict_str_any_w, list_any_w
-from soupape._types import InjectionScope, Injector, ResolutionContext, ResolutionFunction
+from soupape._types import InjectionContext, InjectionScope, ResolutionContext, ResolutionFunction, ResolvingInjector
 
 
 class ListResolver(ServiceResolver[[], list[Any]]):
@@ -35,11 +35,12 @@ class ListResolver(ServiceResolver[[], list[Any]]):
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., list[Any]]:
         assert context.required is not None
+        assert isinstance(context, InjectionContext)
         return _ListResolveFunc(context.injector, context.required.generic_params[0])  # pyright: ignore[reportReturnType]
 
 
 class _ListResolveFunc:
-    def __init__(self, injector: Injector, tw: TWrap[Any]) -> None:
+    def __init__(self, injector: ResolvingInjector, tw: TWrap[Any]) -> None:
         self._injector = injector
         self._type = tw
 
@@ -99,11 +100,12 @@ class DictResolver(ServiceResolver[[], dict[str, Any]]):
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., dict[str, Any]]:
         assert context.required is not None
+        assert isinstance(context, InjectionContext)
         return _DictResolveFunc(context.injector, context.required.generic_params[1])  # pyright: ignore[reportReturnType]
 
 
 class _DictResolveFunc:
-    def __init__(self, injector: Injector, tw: TWrap[Any]) -> None:
+    def __init__(self, injector: ResolvingInjector, tw: TWrap[Any]) -> None:
         self._injector = injector
         self._type = tw
 

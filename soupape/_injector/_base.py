@@ -1,5 +1,6 @@
-from collections.abc import Iterable
-from typing import Any, Self
+from abc import abstractmethod
+from collections.abc import Awaitable, Callable, Iterable
+from typing import Any, Self, Unpack
 
 from peritype import FWrap, TWrap, wrap_type
 
@@ -20,7 +21,7 @@ from soupape._resolvers import (
     WrappedTypeResolver,
 )
 from soupape._traits import get_annotated_resolver
-from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
+from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector, InjectorCallArgs
 from soupape._utils import CircularGuard, accumulate_meta_on_twrap
 from soupape.errors import (
     CaptiveDependencyError,
@@ -78,6 +79,16 @@ class BaseInjector(Injector):
     @property
     def is_root_injector(self) -> bool:
         return len(self._instance_pool) == 1
+
+    @abstractmethod
+    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
+
+    @abstractmethod
+    def call[T](
+        self,
+        callable: Callable[..., T] | FWrap[..., T],
+        **kwargs: Unpack[InjectorCallArgs],
+    ) -> T | Awaitable[T]: ...
 
     def _enter_circular_guard(self, context: InjectionContext, resolver: ServiceResolver[..., Any]) -> None:
         if context.required is not None:

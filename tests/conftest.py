@@ -5,7 +5,7 @@ from typing import Any, Unpack, cast
 import pytest
 from peritype import FWrap, TWrap
 
-from soupape import AsyncInjector, Injector, ServiceCollection, SyncInjector
+from soupape import AsyncInjector, ServiceCollection, SyncInjector
 from soupape._types import InjectorCallArgs
 
 
@@ -23,7 +23,7 @@ class InjectorHarness:
     concrete injector backs it.
     """
 
-    def __init__(self, injector: Injector) -> None:
+    def __init__(self, injector: SyncInjector | AsyncInjector) -> None:
         self.injector = injector
 
     @property
@@ -51,7 +51,7 @@ class InjectorHarness:
         if isinstance(self.injector, AsyncInjector):
             await self.injector.__aenter__()
         else:
-            cast(SyncInjector, self.injector).__enter__()
+            self.injector.__enter__()
         return self
 
     async def __aexit__(
@@ -63,7 +63,7 @@ class InjectorHarness:
         if isinstance(self.injector, AsyncInjector):
             await self.injector.__aexit__(exc_type, exc_value, traceback)
         else:
-            cast(SyncInjector, self.injector).__exit__(exc_type, exc_value, traceback)
+            self.injector.__exit__(exc_type, exc_value, traceback)
 
 
 type InjectorFactory = Callable[[ServiceCollection], InjectorHarness]

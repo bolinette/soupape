@@ -40,6 +40,10 @@ class Injector(Protocol):
     @property
     def services(self) -> "ServiceCollection": ...
 
+    def get_scoped_injector(self) -> "Injector": ...
+
+
+class ResolvingInjector(Injector, Protocol):
     def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
 
     def call[T](
@@ -47,8 +51,6 @@ class Injector(Protocol):
         callable: Callable[..., T] | FWrap[..., T],
         **kwargs: Unpack[InjectorCallArgs],
     ) -> T | Awaitable[T]: ...
-
-    def get_scoped_injector(self) -> "Injector": ...
 
 
 @unique
@@ -85,6 +87,7 @@ class ResolutionContext:
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class InjectionContext(ResolutionContext):
+    injector: "ResolvingInjector"
     circular_guard: CircularGuard
     positional_args: list[Any] | None = None
     singleton_owner: "ServiceResolver[..., Any] | None" = None
