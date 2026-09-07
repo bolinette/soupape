@@ -1458,6 +1458,107 @@ class TestGeneratorResolvers:
         assert resource.active is False
 
 
+class TestFunctionCallArguments:
+    async def test_call_with_named_args(self, make_injector: InjectorFactory) -> None:
+        """`named_args` fills the named parameters, the rest is injected."""
+        services = ServiceCollection()
+
+        class Dependency:
+            pass
+
+        services.add_singleton(Dependency)
+
+        def use(dependency: Dependency, value: int) -> tuple[Dependency, int]:
+            return dependency, value
+
+        async with make_injector(services) as injector:
+            dependency, value = await injector.call(use, named_args={"value": 3})
+
+        assert isinstance(dependency, Dependency)
+        assert value == 3
+
+    async def test_named_arg_wins_over_injection(self, make_injector: InjectorFactory) -> None:
+        """A parameter given by name is not resolved, even if it could have been."""
+        services = ServiceCollection()
+
+        class Dependency:
+            pass
+
+        provided = Dependency()
+
+        def use(dependency: Dependency) -> Dependency:
+            return dependency
+
+        async with make_injector(services) as injector:
+            result = await injector.call(use, named_args={"dependency": provided})
+
+        assert result is provided
+
+    async def test_call_with_positional_and_named_args(self, make_injector: InjectorFactory) -> None:
+        """Positional arguments cover the first parameters, named ones any other, injection the rest."""
+        services = ServiceCollection()
+
+        class Dependency:
+            pass
+
+        services.add_singleton(Dependency)
+
+        def use(first: int, dependency: Dependency, last: str) -> tuple[int, Dependency, str]:
+            return first, dependency, last
+
+        async with make_injector(services) as injector:
+            first, dependency, last = await injector.call(use, positional_args=[1], named_args={"last": "x"})
+
+        assert first == 1
+        assert isinstance(dependency, Dependency)
+        assert last == "x"
+
+    async def test_named_args_reach_variadic_keywords(self, make_injector: InjectorFactory) -> None:
+        """A name the signature does not declare is accepted when the function takes `**kwargs`."""
+        services = ServiceCollection()
+
+        def use(**kwargs: int) -> dict[str, int]:
+            return kwargs
+
+        async with make_injector(services) as injector:
+            result = await injector.call(use, named_args={"extra": 1})
+
+        assert result == {"extra": 1}
+
+    async def test_fail_unexpected_named_arg(self, make_injector: InjectorFactory) -> None:
+        """A name the signature does not declare fails when there is no `**kwargs`."""
+        services = ServiceCollection()
+
+        def use(value: int) -> int:
+            return value
+
+        async with make_injector(services) as injector:
+            with pytest.raises(TypeError, match="unexpected named argument 'other'"):
+                await injector.call(use, named_args={"value": 1, "other": 2})
+
+    async def test_fail_named_arg_for_positional_only_parameter(self, make_injector: InjectorFactory) -> None:
+        """A positional-only parameter cannot be given by name."""
+        services = ServiceCollection()
+
+        def use(value: int, /) -> int:
+            return value
+
+        async with make_injector(services) as injector:
+            with pytest.raises(TypeError, match="positional-only argument 'value'"):
+                await injector.call(use, named_args={"value": 1})
+
+    async def test_fail_named_arg_already_given_positionally(self, make_injector: InjectorFactory) -> None:
+        """A parameter cannot be given both positionally and by name."""
+        services = ServiceCollection()
+
+        def use(value: int) -> int:
+            return value
+
+        async with make_injector(services) as injector:
+            with pytest.raises(TypeError, match="multiple values for argument 'value'"):
+                await injector.call(use, positional_args=[1], named_args={"value": 2})
+
+
 class TestGeneratorResolverHints:
     async def test_generator_resolver_with_iterator_hint(self, make_injector: InjectorFactory) -> None:
         """`Iterator[T]` is accepted as the return hint of a generator resolver."""

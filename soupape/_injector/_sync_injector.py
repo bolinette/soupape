@@ -2,7 +2,7 @@ import inspect
 from collections.abc import Callable, Generator
 from contextlib import ExitStack, contextmanager
 from types import TracebackType
-from typing import Any, Self, Unpack, cast, overload, override
+from typing import Any, Self, cast, overload, override
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
@@ -10,13 +10,7 @@ from soupape._collection import ServiceCollection
 from soupape._injector._base import BaseInjector, injector_w
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import DependencyTreeNode
-from soupape._types import (
-    InjectionContext,
-    InjectionScope,
-    Injector,
-    InjectorCallArgs,
-    ResolutionContext,
-)
+from soupape._types import InjectionContext, InjectionScope, Injector
 from soupape._utils import CircularGuard
 from soupape.errors import AsyncInSyncInjectorError
 
@@ -89,7 +83,7 @@ class SyncInjector(BaseInjector, Injector):
             )
             resolved_args.append(resolved_arg)
 
-        resolved_kwargs: dict[str, Any] = {}
+        resolved_kwargs: dict[str, Any] = dict(context.named_args or {})
         for kwarg_name, kwarg in dep_node.kwargs.items():
             resolved_kwarg = self._resolve_service(
                 context.new_required(kwarg.scope, kwarg.required, kwarg.caller_context),
@@ -113,17 +107,18 @@ class SyncInjector(BaseInjector, Injector):
         return resolved  # type: ignore
 
     @override
-    def require[T](self, interface: type[T] | TWrap[T], *, context: ResolutionContext | None = None) -> T:
+    def require[T](self, interface: type[T] | TWrap[T]) -> T:
         if not isinstance(interface, TWrap):
             twrap = wrap_type(interface)
         else:
             twrap = interface
-        return self._require(twrap, self._get_circular_guard(context))
+        return self._require(twrap, CircularGuard())
 
     def _resolve_depends_on_services(self, interface: TWrap[Any], circular_guard: CircularGuard) -> None:
         for dep_type in self._get_depends_on_services(interface):
             self._require(wrap_type(dep_type), circular_guard)
 
+    @override
     def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T:
         depends_on_guard = circular_guard.copy()
         depends_on_guard.enter_type(interface)
@@ -143,19 +138,36 @@ class SyncInjector(BaseInjector, Injector):
     def call[**P, T](
         self,
         callable: FWrap[P, T],
-        **kwargs: Unpack[InjectorCallArgs],
+        *,
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
     ) -> T: ...
     @overload
     def call[**P, T](
         self,
         callable: Callable[P, T],
-        **kwargs: Unpack[InjectorCallArgs],
+        *,
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
     ) -> T: ...
     @override
     def call(
         self,
         callable: Callable[..., Any] | FWrap[..., Any],
-        **kwargs: Unpack[InjectorCallArgs],
+        *,
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
+    ) -> Any:
+        return self._call_within(callable, positional_args or [], named_args or {}, None, CircularGuard())
+
+    @override
+    def _call_within(
+        self,
+        callable: Callable[..., Any] | FWrap[..., Any],
+        positional_args: list[Any],
+        named_args: dict[str, Any],
+        origin: TWrap[Any] | None,
+        circular_guard: CircularGuard,
     ) -> Any:
         if not isinstance(callable, FWrap):
             fwrap = wrap_func(callable)
@@ -163,10 +175,11 @@ class SyncInjector(BaseInjector, Injector):
             fwrap = cast(FWrap[..., Any], callable)
 
         context = self._get_injection_context(
-            kwargs.get("origin"),
+            origin,
             InjectionScope.IMMEDIATE,
-            circular_guard=self._get_circular_guard(kwargs.get("context")),
-            positional_args=kwargs.get("positional_args"),
+            circular_guard=circular_guard,
+            positional_args=positional_args,
+            named_args=named_args,
         )
         resolver = self._get_function_resolver(fwrap)
         dep_node = self._build_dependency_tree(context.fork(), resolver)

@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, 
 from dataclasses import dataclass
 from enum import Enum, auto, unique
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Never, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
+from typing import TYPE_CHECKING, Any, Never, Protocol, override, runtime_checkable
 
 from peritype import FWrap, TWrap
 
@@ -24,12 +24,6 @@ type ResolutionFunction[**P, T] = (
 )
 
 
-class InjectorCallArgs(TypedDict):
-    positional_args: NotRequired[list[Any]]
-    origin: NotRequired[TWrap[Any] | None]
-    context: NotRequired["ResolutionContext | None"]
-
-
 class Injector(Protocol):
     @property
     def is_async(self) -> bool: ...
@@ -44,18 +38,21 @@ class Injector(Protocol):
 
 
 class ResolvingInjector(Injector, Protocol):
-    def require[T](
-        self,
-        interface: type[T] | TWrap[T],
-        *,
-        context: "ResolutionContext | None" = None,
-    ) -> T | Awaitable[T]: ...
+    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
 
     def call[T](
         self,
         callable: Callable[..., T] | FWrap[..., T],
-        **kwargs: Unpack[InjectorCallArgs],
+        *,
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
     ) -> T | Awaitable[T]: ...
+
+
+type RequireWithin = Callable[[type[Any] | TWrap[Any], CircularGuard], Any]
+type CallWithin = Callable[
+    [Callable[..., Any] | FWrap[..., Any], list[Any], dict[str, Any], TWrap[Any] | None, CircularGuard], Any
+]
 
 
 @unique
@@ -90,20 +87,41 @@ class ResolutionContext:
         )
 
     def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]:
-        return self.injector.require(interface, context=self)
+        return self.injector.require(interface)
 
     def call[T](
-        self, callable: Callable[..., T] | FWrap[..., T], positional_args: list[Any] | None = None
+        self,
+        callable: Callable[..., T] | FWrap[..., T],
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
     ) -> T | Awaitable[T]:
-        return self.injector.call(callable, positional_args=positional_args or [], origin=self.origin, context=self)
+        return self.injector.call(callable, positional_args=positional_args, named_args=named_args)
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class InjectionContext(ResolutionContext):
     circular_guard: CircularGuard
+    require_within: RequireWithin
+    call_within: CallWithin
     positional_args: list[Any] | None = None
+    named_args: dict[str, Any] | None = None
     singleton_owner: "ServiceResolver[..., Any] | None" = None
     parent: "InjectionContext | None" = None
+
+    @override
+    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]:
+        return self.require_within(interface, self.circular_guard.copy())
+
+    @override
+    def call[T](
+        self,
+        callable: Callable[..., T] | FWrap[..., T],
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
+    ) -> T | Awaitable[T]:
+        return self.call_within(
+            callable, positional_args or [], named_args or {}, self.origin, self.circular_guard.copy()
+        )
 
     def new_required(
         self,
@@ -118,7 +136,10 @@ class InjectionContext(ResolutionContext):
             circular_guard=self.circular_guard.copy(),
             required=required,
             positional_args=None,
+            named_args=None,
             caller_context=caller_context,
+            require_within=self.require_within,
+            call_within=self.call_within,
             singleton_owner=self.singleton_owner,
             parent=self,
         )
@@ -131,7 +152,10 @@ class InjectionContext(ResolutionContext):
             circular_guard=self.circular_guard,
             required=self.required,
             positional_args=self.positional_args,
+            named_args=self.named_args,
             caller_context=self.caller_context,
+            require_within=self.require_within,
+            call_within=self.call_within,
             singleton_owner=owner,
             parent=self.parent,
         )
@@ -144,7 +168,10 @@ class InjectionContext(ResolutionContext):
             circular_guard=self.circular_guard.copy(),
             required=self.required,
             positional_args=self.positional_args,
+            named_args=self.named_args,
             caller_context=self.caller_context,
+            require_within=self.require_within,
+            call_within=self.call_within,
             singleton_owner=self.singleton_owner,
             parent=self.parent,
         )

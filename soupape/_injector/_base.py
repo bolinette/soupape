@@ -1,6 +1,7 @@
+import inspect
 from abc import abstractmethod
-from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, Self, Unpack, override
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from typing import Any, Self, override
 
 from peritype import FWrap, TWrap, wrap_type
 
@@ -21,14 +22,7 @@ from soupape._resolvers import (
     WrappedTypeResolver,
 )
 from soupape._traits import get_annotated_resolver
-from soupape._types import (
-    CallerContext,
-    InjectionContext,
-    InjectionScope,
-    Injector,
-    InjectorCallArgs,
-    ResolutionContext,
-)
+from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
 from soupape._utils import CircularGuard, accumulate_meta_on_twrap
 from soupape.errors import (
     CaptiveDependencyError,
@@ -73,6 +67,7 @@ class BaseInjector(Injector):
         circular_guard: CircularGuard | None = None,
         required: TWrap[Any] | None = None,
         positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
     ) -> InjectionContext:
         return InjectionContext(
             injector=self,
@@ -80,7 +75,10 @@ class BaseInjector(Injector):
             scope=scope,
             required=required,
             positional_args=positional_args,
+            named_args=named_args,
             circular_guard=circular_guard or CircularGuard(),
+            require_within=self._require_within,
+            call_within=self._call_within,
         )
 
     @property
@@ -88,24 +86,33 @@ class BaseInjector(Injector):
         return len(self._instance_pool) == 1
 
     @abstractmethod
-    def require[T](
-        self,
-        interface: type[T] | TWrap[T],
-        *,
-        context: ResolutionContext | None = None,
-    ) -> T | Awaitable[T]: ...
-
-    def _get_circular_guard(self, context: ResolutionContext | None) -> CircularGuard:
-        if isinstance(context, InjectionContext):
-            return context.circular_guard.copy()
-        return CircularGuard()
+    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
 
     @abstractmethod
     def call[T](
         self,
         callable: Callable[..., T] | FWrap[..., T],
-        **kwargs: Unpack[InjectorCallArgs],
+        *,
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
     ) -> T | Awaitable[T]: ...
+
+    @abstractmethod
+    def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T | Awaitable[T]: ...
+
+    @abstractmethod
+    def _call_within(
+        self,
+        callable: Callable[..., Any] | FWrap[..., Any],
+        positional_args: list[Any],
+        named_args: dict[str, Any],
+        origin: TWrap[Any] | None,
+        circular_guard: CircularGuard,
+    ) -> Any: ...
+
+    def _require_within(self, interface: type[Any] | TWrap[Any], circular_guard: CircularGuard) -> Any:
+        twrap = interface if isinstance(interface, TWrap) else wrap_type(interface)
+        return self._require(twrap, circular_guard)
 
     def _enter_circular_guard(self, context: InjectionContext, resolver: ServiceResolver[..., Any]) -> None:
         if context.required is not None:
@@ -203,17 +210,17 @@ class BaseInjector(Injector):
         kwargs: dict[str, DependencyTreeNode[..., Any]] = {}
         hints = resolver.get_resolution_hints(context)
 
-        if context.positional_args is not None:
-            skip = len(context.positional_args)
-        else:
-            skip = 0
+        parameters = resolver.get_resolution_signature().parameters
+        skip = len(context.positional_args) if context.positional_args is not None else 0
+        named_args = context.named_args or {}
+        self._check_named_args(resolver, parameters, skip, named_args)
 
-        for param_name, param in resolver.get_resolution_signature().parameters.items():
+        for param_name, param in parameters.items():
             if skip > 0:
                 skip -= 1
                 continue
 
-            if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
+            if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD) or param_name in named_args:
                 continue
             if param_name not in hints:
                 raise MissingTypeHintError(param_name, resolver.name)
@@ -254,6 +261,25 @@ class BaseInjector(Injector):
             registered=resolver.registered,
             caller_context=context.caller_context,
         )
+
+    def _check_named_args(
+        self,
+        resolver: ServiceResolver[..., Any],
+        parameters: Mapping[str, inspect.Parameter],
+        skip: int,
+        named_args: dict[str, Any],
+    ) -> None:
+        accepts_any_name = any(param.kind is param.VAR_KEYWORD for param in parameters.values())
+        positional_names = set(list(parameters)[:skip])
+        for name in named_args:
+            param = parameters.get(name)
+            if param is None:
+                if not accepts_any_name:
+                    raise TypeError(f"'{resolver.name}' got an unexpected named argument '{name}'")
+            elif param.kind is param.POSITIONAL_ONLY:
+                raise TypeError(f"'{resolver.name}' got positional-only argument '{name}' passed by name")
+            elif name in positional_names:
+                raise TypeError(f"'{resolver.name}' got multiple values for argument '{name}'")
 
     def _get_depends_on_services(self, interface: TWrap[Any]) -> Iterable[type[Any]]:
         return accumulate_meta_on_twrap(interface, ServiceDependencyMetadata.KEY, lambda: [])

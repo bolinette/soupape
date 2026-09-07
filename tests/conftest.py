@@ -1,12 +1,11 @@
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import Any, Unpack, cast
+from typing import Any, cast
 
 import pytest
 from peritype import FWrap, TWrap
 
 from soupape import AsyncInjector, ServiceCollection, SyncInjector
-from soupape._types import InjectorCallArgs
 
 
 async def _resolved[T](result: T | Awaitable[T]) -> T:
@@ -40,9 +39,11 @@ class InjectorHarness:
     async def call[T](
         self,
         callable: Callable[..., T] | FWrap[..., T],
-        **kwargs: Unpack[InjectorCallArgs],
+        *,
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
     ) -> T:
-        return await _resolved(self.injector.call(callable, **kwargs))
+        return await _resolved(self.injector.call(callable, positional_args=positional_args, named_args=named_args))
 
     def get_scoped_injector(self) -> "InjectorHarness":
         return InjectorHarness(self.injector.get_scoped_injector())
