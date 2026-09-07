@@ -27,7 +27,7 @@ type ResolutionFunction[**P, T] = (
 class InjectorCallArgs(TypedDict):
     positional_args: NotRequired[list[Any]]
     origin: NotRequired[TWrap[Any] | None]
-    circular_guard: NotRequired[CircularGuard]
+    context: NotRequired["ResolutionContext | None"]
 
 
 class Injector(Protocol):
@@ -44,7 +44,12 @@ class Injector(Protocol):
 
 
 class ResolvingInjector(Injector, Protocol):
-    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
+    def require[T](
+        self,
+        interface: type[T] | TWrap[T],
+        *,
+        context: "ResolutionContext | None" = None,
+    ) -> T | Awaitable[T]: ...
 
     def call[T](
         self,
@@ -69,7 +74,7 @@ class CallerContext:
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class ResolutionContext:
-    injector: Injector
+    injector: ResolvingInjector
     origin: TWrap[Any] | None
     scope: "InjectionScope"
     required: TWrap[Any] | None
@@ -84,10 +89,17 @@ class ResolutionContext:
             caller_context=self.caller_context,
         )
 
+    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]:
+        return self.injector.require(interface, context=self)
+
+    def call[T](
+        self, callable: Callable[..., T] | FWrap[..., T], positional_args: list[Any] | None = None
+    ) -> T | Awaitable[T]:
+        return self.injector.call(callable, positional_args=positional_args or [], origin=self.origin, context=self)
+
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class InjectionContext(ResolutionContext):
-    injector: "ResolvingInjector"
     circular_guard: CircularGuard
     positional_args: list[Any] | None = None
     singleton_owner: "ServiceResolver[..., Any] | None" = None

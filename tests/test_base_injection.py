@@ -2138,6 +2138,68 @@ class TestCircularDependencies:
         assert service_b.service_a.service_b == ()
 
 
+class TestCircularDependenciesThroughResolvers:
+    async def test_fail_circular_dependency_through_list_injection(self, make_injector: InjectorFactory) -> None:
+        """A service in `list[Base]` that itself depends on `list[Base]` is a cycle, not a recursion error."""
+        services = ServiceCollection()
+
+        class Base:
+            pass
+
+        class Implementation(Base):
+            def __init__(self, others: list[Base]) -> None:
+                self.others = others
+
+        services.add_singleton(Implementation)
+
+        async with make_injector(services) as injector:
+            with pytest.raises(CircularDependencyError) as exc_info:
+                await injector.require(Implementation)
+
+        assert wrap_type(Implementation) in exc_info.value.trace
+        assert wrap_type(list[Base]) in exc_info.value.trace
+
+    async def test_fail_circular_dependency_through_custom_resolver(self, make_injector: InjectorFactory) -> None:
+        """A custom resolver requiring through its context takes part in cycle detection."""
+        services = ServiceCollection()
+
+        class Dependency:
+            pass
+
+        class Service:
+            def __init__(self, dependency: Dependency) -> None:
+                self.dependency = dependency
+
+        class ThroughContextResolver(ServiceResolver[..., Any]):
+            @property
+            @override
+            def scope(self) -> InjectionScope:
+                return InjectionScope.TRANSIENT
+
+            @override
+            def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
+                return {}
+
+            @override
+            def get_instance_function(self) -> FWrap[..., Any]:
+                return self._empty_resolver_w
+
+            @override
+            def get_resolution_signature(self) -> inspect.Signature:
+                return self._empty_resolver_w.signature
+
+            @override
+            def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., Any]:
+                return lambda: context.require(Service)
+
+        resolver(Dependency, ThroughContextResolver())
+        services.add_singleton(Service)
+
+        async with make_injector(services) as injector:
+            with pytest.raises(CircularDependencyError):
+                await injector.require(Service)
+
+
 class TestGenericCircularDependencies:
     async def test_generic_service_specialized_twice_is_not_a_cycle(self, make_injector: InjectorFactory) -> None:
         """Two specializations of one generic class on a single path share an `__init__` but are not a cycle."""

@@ -6,7 +6,7 @@ from peritype import FWrap, TWrap
 
 from soupape._resolvers import ServiceResolver
 from soupape._resolvers._utils import dict_str_any_w, list_any_w
-from soupape._types import InjectionContext, InjectionScope, ResolutionContext, ResolutionFunction, ResolvingInjector
+from soupape._types import InjectionScope, ResolutionContext, ResolutionFunction
 
 
 class ListResolver(ServiceResolver[[], list[Any]]):
@@ -35,18 +35,19 @@ class ListResolver(ServiceResolver[[], list[Any]]):
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., list[Any]]:
         assert context.required is not None
-        assert isinstance(context, InjectionContext)
-        return _ListResolveFunc(context.injector, context.required.generic_params[0])  # pyright: ignore[reportReturnType]
+        return _ListResolveFunc(context, context.required.generic_params[0])  # pyright: ignore[reportReturnType]
 
 
 class _ListResolveFunc:
-    def __init__(self, injector: ResolvingInjector, tw: TWrap[Any]) -> None:
-        self._injector = injector
+    def __init__(self, context: ResolutionContext, tw: TWrap[Any]) -> None:
+        self._context = context
         self._type = tw
 
     def _get_matching_types(self) -> list[TWrap[Any]]:
         return [
-            twrap for twrap in self._injector.services.registered_types if self._type.match(twrap, match_mode="sub")
+            twrap
+            for twrap in self._context.injector.services.registered_types
+            if self._type.match(twrap, match_mode="sub")
         ]
 
     async def _continue_async(
@@ -57,7 +58,7 @@ class _ListResolveFunc:
     ) -> list[Any]:
         services.append(await service)
         for twrap in remaining_types:
-            service = self._injector.require(twrap)
+            service = self._context.require(twrap)
             if inspect.iscoroutine(service):
                 service = await service
             services.append(service)
@@ -67,7 +68,7 @@ class _ListResolveFunc:
         services: list[Any] = []
         matching_types = self._get_matching_types()
         for index, twrap in enumerate(matching_types):
-            service = self._injector.require(twrap)
+            service = self._context.require(twrap)
             if inspect.iscoroutine(service):
                 return self._continue_async(services, service, matching_types[index + 1 :])
             services.append(service)
@@ -100,18 +101,19 @@ class DictResolver(ServiceResolver[[], dict[str, Any]]):
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., dict[str, Any]]:
         assert context.required is not None
-        assert isinstance(context, InjectionContext)
-        return _DictResolveFunc(context.injector, context.required.generic_params[1])  # pyright: ignore[reportReturnType]
+        return _DictResolveFunc(context, context.required.generic_params[1])  # pyright: ignore[reportReturnType]
 
 
 class _DictResolveFunc:
-    def __init__(self, injector: ResolvingInjector, tw: TWrap[Any]) -> None:
-        self._injector = injector
+    def __init__(self, context: ResolutionContext, tw: TWrap[Any]) -> None:
+        self._context = context
         self._type = tw
 
     def _get_matching_types(self) -> list[TWrap[Any]]:
         return [
-            twrap for twrap in self._injector.services.registered_types if self._type.match(twrap, match_mode="sub")
+            twrap
+            for twrap in self._context.injector.services.registered_types
+            if self._type.match(twrap, match_mode="sub")
         ]
 
     async def _continue_async(
@@ -123,7 +125,7 @@ class _DictResolveFunc:
     ) -> dict[str, Any]:
         services[str(service_twrap)] = await service
         for twrap in remaining_types:
-            service = self._injector.require(twrap)
+            service = self._context.require(twrap)
             if inspect.iscoroutine(service):
                 service = await service
             services[str(twrap)] = service
@@ -133,7 +135,7 @@ class _DictResolveFunc:
         services: dict[str, Any] = {}
         matching_types = self._get_matching_types()
         for index, twrap in enumerate(matching_types):
-            service = self._injector.require(twrap)
+            service = self._context.require(twrap)
             if inspect.iscoroutine(service):
                 return self._continue_async(services, twrap, service, matching_types[index + 1 :])
             services[str(twrap)] = service

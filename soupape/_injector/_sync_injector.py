@@ -2,7 +2,7 @@ import inspect
 from collections.abc import Callable, Generator
 from contextlib import ExitStack, contextmanager
 from types import TracebackType
-from typing import Any, Self, Unpack, cast, overload
+from typing import Any, Self, Unpack, cast, overload, override
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
@@ -15,6 +15,7 @@ from soupape._types import (
     InjectionScope,
     Injector,
     InjectorCallArgs,
+    ResolutionContext,
 )
 from soupape._utils import CircularGuard
 from soupape.errors import AsyncInSyncInjectorError
@@ -33,6 +34,7 @@ class SyncInjector(BaseInjector, Injector):
         self._set_injector_in_services()
 
     @property
+    @override
     def is_async(self) -> bool:
         return False
 
@@ -110,12 +112,13 @@ class SyncInjector(BaseInjector, Injector):
 
         return resolved  # type: ignore
 
-    def require[T](self, interface: type[T] | TWrap[T]) -> T:
+    @override
+    def require[T](self, interface: type[T] | TWrap[T], *, context: ResolutionContext | None = None) -> T:
         if not isinstance(interface, TWrap):
             twrap = wrap_type(interface)
         else:
             twrap = interface
-        return self._require(twrap, CircularGuard())
+        return self._require(twrap, self._get_circular_guard(context))
 
     def _resolve_depends_on_services(self, interface: TWrap[Any], circular_guard: CircularGuard) -> None:
         for dep_type in self._get_depends_on_services(interface):
@@ -148,6 +151,7 @@ class SyncInjector(BaseInjector, Injector):
         callable: Callable[P, T],
         **kwargs: Unpack[InjectorCallArgs],
     ) -> T: ...
+    @override
     def call(
         self,
         callable: Callable[..., Any] | FWrap[..., Any],
@@ -161,13 +165,14 @@ class SyncInjector(BaseInjector, Injector):
         context = self._get_injection_context(
             kwargs.get("origin"),
             InjectionScope.IMMEDIATE,
-            circular_guard=kwargs.get("circular_guard"),
+            circular_guard=self._get_circular_guard(kwargs.get("context")),
             positional_args=kwargs.get("positional_args"),
         )
         resolver = self._get_function_resolver(fwrap)
         dep_node = self._build_dependency_tree(context.fork(), resolver)
         return self._resolve_service(context.fork(), dep_node)
 
+    @override
     def get_scoped_injector(self) -> "SyncInjector":
         return SyncInjector(self._services, self._instance_pool.stack(), parent=self)
 

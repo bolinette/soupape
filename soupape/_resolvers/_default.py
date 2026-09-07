@@ -9,7 +9,6 @@ from soupape._decorators._post_init import PostInitMetadata
 from soupape._resolvers import ServiceResolver
 from soupape._types import (
     AsyncContextManager,
-    InjectionContext,
     InjectionScope,
     ResolutionContext,
     ResolutionFunction,
@@ -68,7 +67,6 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
 
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[P, T]:
-        assert isinstance(context, InjectionContext)
         if context.injector.is_async:
             return _AsyncServiceDefaultResolveFunc(self, context)
         else:
@@ -93,20 +91,14 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
 
 
 class _AsyncServiceDefaultResolveFunc[**P, T]:
-    def __init__(self, resolver: "DefaultResolver[P, T]", context: InjectionContext) -> None:
+    def __init__(self, resolver: "DefaultResolver[P, T]", context: ResolutionContext) -> None:
         self._resolver = resolver
         self._context = context
-        self._injector = context.injector
 
     async def __call__(self, *args: Any, **kwargs: Any) -> AsyncGenerator[T]:
         instance = self._resolver.registered.instantiate(*args, **kwargs)
         for post_init in self._resolver.post_inits:
-            result = self._injector.call(
-                post_init,
-                positional_args=[instance],
-                origin=self._context.origin,
-                circular_guard=self._context.circular_guard.copy(),
-            )
+            result = self._context.call(post_init, [instance])
             if asyncio.iscoroutine(result):
                 await result
         if self._resolver.is_async_context_manager:
@@ -121,22 +113,16 @@ class _AsyncServiceDefaultResolveFunc[**P, T]:
 
 
 class _SyncServiceDefaultResolveFunc[**P, T]:
-    def __init__(self, resolver: "DefaultResolver[P, T]", context: InjectionContext) -> None:
+    def __init__(self, resolver: "DefaultResolver[P, T]", context: ResolutionContext) -> None:
         self.resolver = resolver
         self._context = context
-        self._injector = context.injector
 
     def __call__(self, *args: Any, **kwargs: Any) -> Generator[T]:
         instance = self.resolver.registered.instantiate(*args, **kwargs)
         if self.resolver.is_async_context_manager and not self.resolver.is_sync_context_manager:
             raise AsyncContextManagerInSyncInjectorError(str(self.resolver.registered))
         for post_init in self.resolver.post_inits:
-            self._injector.call(
-                post_init,
-                positional_args=[instance],
-                origin=self._context.origin,
-                circular_guard=self._context.circular_guard.copy(),
-            )
+            self._context.call(post_init, [instance])
         if self.resolver.is_sync_context_manager:
             with instance:
                 yield instance  # pyright: ignore[reportReturnType]

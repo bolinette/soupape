@@ -3,6 +3,7 @@ from soupape._types import (
     ResolutionContext as ResolutionContext,
     InjectionScope as InjectionScope,
     ResolutionFunction as ResolutionFunction,
+    ResolvingInjector as ResolvingInjector,
 )
 from soupape._resolvers import (
     ServiceResolver as ServiceResolver,
@@ -17,6 +18,7 @@ __all__ = [
     "InjectionScope",
     "ResolutionContext",
     "ResolutionFunction",
+    "ResolvingInjector",
     "ServiceResolver",
     "annotation_resolver",
     "resolver",

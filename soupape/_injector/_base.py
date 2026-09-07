@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, Self, Unpack
+from typing import Any, Self, Unpack, override
 
 from peritype import FWrap, TWrap, wrap_type
 
@@ -21,7 +21,14 @@ from soupape._resolvers import (
     WrappedTypeResolver,
 )
 from soupape._traits import get_annotated_resolver
-from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector, InjectorCallArgs
+from soupape._types import (
+    CallerContext,
+    InjectionContext,
+    InjectionScope,
+    Injector,
+    InjectorCallArgs,
+    ResolutionContext,
+)
 from soupape._utils import CircularGuard, accumulate_meta_on_twrap
 from soupape.errors import (
     CaptiveDependencyError,
@@ -81,7 +88,17 @@ class BaseInjector(Injector):
         return len(self._instance_pool) == 1
 
     @abstractmethod
-    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
+    def require[T](
+        self,
+        interface: type[T] | TWrap[T],
+        *,
+        context: ResolutionContext | None = None,
+    ) -> T | Awaitable[T]: ...
+
+    def _get_circular_guard(self, context: ResolutionContext | None) -> CircularGuard:
+        if isinstance(context, InjectionContext):
+            return context.circular_guard.copy()
+        return CircularGuard()
 
     @abstractmethod
     def call[T](
@@ -107,10 +124,12 @@ class BaseInjector(Injector):
         return self
 
     @property
+    @override
     def instances(self) -> InstancePoolStack:
         return self._instance_pool
 
     @property
+    @override
     def services(self) -> ServiceCollection:
         return self._services
 
