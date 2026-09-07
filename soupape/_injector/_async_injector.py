@@ -8,7 +8,7 @@ from typing import Any, Self, Unpack, cast, overload
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
 from soupape._collection import ServiceCollection
-from soupape._injector import BaseInjector
+from soupape._injector._base import BaseInjector, injector_w
 from soupape._instances import InstancePoolStack, PendingBuild
 from soupape._resolvers import DependencyTreeNode
 from soupape._types import (
@@ -59,7 +59,7 @@ class AsyncInjector(BaseInjector, Injector):
         generator: Generator[T, Any, Any],
     ) -> T:
         owner = self._get_generator_owner(context)
-        return owner._exit_stack.enter_context(contextmanager(lambda: generator)())
+        return owner._exit_stack.enter_context(_enter_generator(generator))
 
     async def _enter_async_generator[T](
         self,
@@ -67,7 +67,7 @@ class AsyncInjector(BaseInjector, Injector):
         generator: AsyncGenerator[T, Any],
     ) -> T:
         owner = self._get_generator_owner(context)
-        return await owner._exit_stack.enter_async_context(asynccontextmanager(lambda: generator)())
+        return await owner._exit_stack.enter_async_context(_enter_async_generator(generator))
 
     async def _resolve_service[T](
         self,
@@ -76,9 +76,11 @@ class AsyncInjector(BaseInjector, Injector):
     ) -> T:
         self._enter_circular_guard(context, dep_node.resolver)
         context = self._with_singleton_owner(context, dep_node.resolver)
-        if dep_node.registered is None or context.scope not in (InjectionScope.SINGLETON, InjectionScope.SCOPED):
+        key = self._get_storage_key(context, dep_node)
+        if key is None:
             return await self._build_service(context, dep_node)
-        key = self._get_instance_key(context, dep_node.registered)
+        if self._has_instance(key):
+            return self._instance_pool.get_instance(key)
         if (pending := self._instance_pool.get_pending(key)) is not None:
             return await self._await_pending(context, pending)
         return await self._claim_and_build(context, dep_node, key)
@@ -252,4 +254,15 @@ class AsyncInjector(BaseInjector, Injector):
 
 
 async_injector_w = wrap_type(AsyncInjector)
-injector_w = wrap_type(Injector)
+
+
+def _identity[T](generator: Generator[T, Any, Any]) -> Generator[T, Any, Any]:
+    return generator
+
+
+def _async_identity[T](generator: AsyncGenerator[T, Any]) -> AsyncGenerator[T, Any]:
+    return generator
+
+
+_enter_generator = contextmanager(_identity)
+_enter_async_generator = asynccontextmanager(_async_identity)

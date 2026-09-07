@@ -2231,6 +2231,33 @@ class TestGenericCircularDependencies:
         ]
 
 
+class TestStoredInstances:
+    async def test_transient_registration_ignores_singleton_instance_of_same_implementation(
+        self, make_injector: InjectorFactory
+    ) -> None:
+        """A transient stays transient even if its implementation is stored under another interface."""
+        services = ServiceCollection()
+
+        class Interface:
+            pass
+
+        class Implementation(Interface):
+            pass
+
+        services.add_singleton(Interface, Implementation)
+        services.add_transient(Implementation)
+
+        async with make_injector(services) as injector:
+            singleton = await injector.require(Interface)
+            assert await injector.require(Interface) is singleton
+            first = await injector.require(Implementation)
+            second = await injector.require(Implementation)
+
+        assert first is not singleton
+        assert second is not singleton
+        assert first is not second
+
+
 class TestInjectorRequirements:
     async def test_require_injector_protocol(self, make_injector: InjectorFactory) -> None:
         """A service can depend on the `Injector` protocol and gets the running injector."""

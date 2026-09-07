@@ -198,6 +198,6 @@ class ServiceCollection:
 
     def copy(self) -> "ServiceCollection":
         new_collection = ServiceCollection()
-        for resolver in self._resolvers.values():
-            new_collection.add_resolver(resolver)
+        new_collection._registered_services = self._registered_services.copy()
+        new_collection._resolvers = self._resolvers.copy()
         return new_collection

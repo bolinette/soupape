@@ -3,7 +3,7 @@ from typing import Any, Self
 
 from peritype import FWrap, TWrap, wrap_type
 
-from soupape import ServiceCollection
+from soupape._collection import ServiceCollection
 from soupape._decorators import get_custom_resolver
 from soupape._decorators._depends_on import ServiceDependencyMetadata
 from soupape._extensions import get_annotated_resolver
@@ -143,11 +143,7 @@ class BaseInjector(Injector):
         if (resolv_meta := get_custom_resolver(interface)) is not None:
             return resolv_meta
         if self._services.is_registered(interface):
-            resolver = self._services.get_resolver(interface)
-            registered = resolver.registered
-            if registered is not None and self._has_instance(registered):
-                return self._make_instantiated_resolver(interface, registered)
-            return resolver
+            return self._services.get_resolver(interface)
         if self._has_instance(interface):
             return self._make_instantiated_resolver(interface)
         raise ServiceNotFoundError(str(interface))
@@ -156,6 +152,11 @@ class BaseInjector(Injector):
         if (resolv_meta := get_custom_resolver(fwrap)) is not None:
             return resolv_meta
         return FunctionResolver(InjectionScope.IMMEDIATE, fwrap)
+
+    def _get_storage_key(self, context: InjectionContext, dep_node: DependencyTreeNode[..., Any]) -> TWrap[Any] | None:
+        if dep_node.registered is None or context.scope not in (InjectionScope.SINGLETON, InjectionScope.SCOPED):
+            return None
+        return self._get_instance_key(context, dep_node.registered)
 
     def _build_dependency_tree(
         self,
@@ -227,3 +228,4 @@ class BaseInjector(Injector):
 
 
 service_collection_w = wrap_type(ServiceCollection)
+injector_w = wrap_type(Injector)

@@ -28,6 +28,10 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
         self._scope = scope
         self._interface = interface
         self._implementation = implementation
+        self._post_inits: tuple[Callable[..., Any], ...] | None = None
+        inner_type: type[Any] = implementation.inner_type
+        self.is_sync_context_manager = issubclass(inner_type, SyncContextManager)
+        self.is_async_context_manager = issubclass(inner_type, AsyncContextManager)
 
     @property
     @override
@@ -68,6 +72,12 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
         else:
             return _SyncServiceDefaultResolveFunc(self, context)
 
+    @property
+    def post_inits(self) -> tuple[Callable[..., Any], ...]:
+        if self._post_inits is None:
+            self._post_inits = tuple(self.get_post_inits(self._implementation))
+        return self._post_inits
+
     def get_post_inits(self, twrap: TWrap[Any]) -> Iterable[Callable[..., Any]]:
         inner_type: type[Any] = twrap.inner_type
         hooks: dict[str, Callable[..., Any]] = {}
@@ -88,8 +98,7 @@ class _AsyncServiceDefaultResolveFunc[**P, T]:
 
     async def __call__(self, *args: Any, **kwargs: Any) -> AsyncGenerator[T]:
         instance = self._resolver.registered.instantiate(*args, **kwargs)
-        post_inits = self._resolver.get_post_inits(self._resolver.registered)
-        for post_init in post_inits:
+        for post_init in self._resolver.post_inits:
             result = self._injector.call(
                 post_init,
                 positional_args=[instance],
@@ -98,11 +107,11 @@ class _AsyncServiceDefaultResolveFunc[**P, T]:
             )
             if asyncio.iscoroutine(result):
                 await result
-        if isinstance(instance, AsyncContextManager):
+        if self._resolver.is_async_context_manager:
             async with instance:
                 yield instance  # pyright: ignore[reportReturnType]
             return
-        if isinstance(instance, SyncContextManager):
+        if self._resolver.is_sync_context_manager:
             with instance:
                 yield instance  # pyright: ignore[reportReturnType]
             return
@@ -117,17 +126,16 @@ class _SyncServiceDefaultResolveFunc[**P, T]:
 
     def __call__(self, *args: Any, **kwargs: Any) -> Generator[T]:
         instance = self.resolver.registered.instantiate(*args, **kwargs)
-        if isinstance(instance, AsyncContextManager) and not isinstance(instance, SyncContextManager):
+        if self.resolver.is_async_context_manager and not self.resolver.is_sync_context_manager:
             raise AsyncContextManagerInSyncInjectorError(str(self.resolver.registered))
-        post_inits = self.resolver.get_post_inits(self.resolver.registered)
-        for post_init in post_inits:
+        for post_init in self.resolver.post_inits:
             self._injector.call(
                 post_init,
                 positional_args=[instance],
                 origin=self._context.origin,
                 circular_guard=self._context.circular_guard.copy(),
             )
-        if isinstance(instance, SyncContextManager):
+        if self.resolver.is_sync_context_manager:
             with instance:
                 yield instance  # pyright: ignore[reportReturnType]
             return

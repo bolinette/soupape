@@ -7,7 +7,7 @@ from typing import Any, Self, Unpack, cast, overload
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
 from soupape._collection import ServiceCollection
-from soupape._injector import BaseInjector
+from soupape._injector._base import BaseInjector, injector_w
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import DependencyTreeNode
 from soupape._types import (
@@ -57,7 +57,7 @@ class SyncInjector(BaseInjector, Injector):
         generator: Generator[T, Any, Any],
     ) -> T:
         owner = self._get_generator_owner(context)
-        return owner._exit_stack.enter_context(contextmanager(lambda: generator)())
+        return owner._exit_stack.enter_context(_enter_generator(generator))
 
     def _resolve_service[T](
         self,
@@ -66,11 +66,19 @@ class SyncInjector(BaseInjector, Injector):
     ) -> T:
         self._enter_circular_guard(context, dep_node.resolver)
         context = self._with_singleton_owner(context, dep_node.resolver)
+        key = self._get_storage_key(context, dep_node)
+        if key is not None and self._has_instance(key):
+            return self._instance_pool.get_instance(key)
+        return self._build_service(context, dep_node)
 
+    def _build_service[T](
+        self,
+        context: InjectionContext,
+        dep_node: DependencyTreeNode[..., T],
+    ) -> T:
         resolved_args: list[Any] = []
         if context.positional_args is not None:
-            positional_args = context.positional_args
-            for arg in positional_args:
+            for arg in context.positional_args:
                 resolved_args.append(arg)
         for arg in dep_node.args:
             resolved_arg = self._resolve_service(
@@ -165,4 +173,10 @@ class SyncInjector(BaseInjector, Injector):
 
 
 sync_injector_w = wrap_type(SyncInjector)
-injector_w = wrap_type(Injector)
+
+
+def _identity[T](generator: Generator[T, Any, Any]) -> Generator[T, Any, Any]:
+    return generator
+
+
+_enter_generator = contextmanager(_identity)
