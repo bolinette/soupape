@@ -1,6 +1,8 @@
 import inspect
-from collections.abc import Callable
-from typing import Any, Unpack, cast, overload
+from collections.abc import Callable, Generator
+from contextlib import ExitStack, contextmanager
+from types import TracebackType
+from typing import Any, Self, Unpack, cast, overload
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
@@ -19,24 +21,51 @@ from soupape.errors import AsyncInSyncInjectorError
 
 
 class SyncInjector(BaseInjector, Injector):
-    def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
-        super().__init__(services, instance_pool)
+    def __init__(
+        self,
+        services: ServiceCollection,
+        instance_pool: InstancePoolStack | None = None,
+        *,
+        parent: Self | None = None,
+    ) -> None:
+        super().__init__(services, instance_pool, parent=parent)
+        self._exit_stack = ExitStack()
         self._set_injector_in_services()
 
     @property
     def is_async(self) -> bool:
         return False
 
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self._exit_stack.__exit__(exc_type, exc_value, traceback)
+
     def _set_injector_in_services(self) -> None:
         self._instance_pool.set_instance(injector_w, self)
         self._instance_pool.set_instance(sync_injector_w, self)
+
+    def _enter_generator[T](
+        self,
+        context: InjectionContext,
+        generator: Generator[T, Any, Any],
+    ) -> T:
+        owner = self._get_generator_owner(context)
+        return owner._exit_stack.enter_context(contextmanager(lambda: generator)())
 
     def _resolve_service[T](
         self,
         context: InjectionContext,
         dep_node: DependencyTreeNode[..., T],
     ) -> T:
-        context.circular_guard.enter(dep_node.resolver.get_instance_function())
+        self._enter_circular_guard(context, dep_node.resolver)
+        context = self._with_singleton_owner(context, dep_node.resolver)
 
         resolved_args: list[Any] = []
         if context.positional_args is not None:
@@ -45,7 +74,7 @@ class SyncInjector(BaseInjector, Injector):
                 resolved_args.append(arg)
         for arg in dep_node.args:
             resolved_arg = self._resolve_service(
-                context.new_required(dep_node.scope, arg.required, dep_node.caller_context),
+                context.new_required(arg.scope, arg.required, dep_node.caller_context),
                 arg,
             )
             resolved_args.append(resolved_arg)
@@ -53,7 +82,7 @@ class SyncInjector(BaseInjector, Injector):
         resolved_kwargs: dict[str, Any] = {}
         for kwarg_name, kwarg in dep_node.kwargs.items():
             resolved_kwarg = self._resolve_service(
-                context.new_required(dep_node.scope, kwarg.required, dep_node.caller_context),
+                context.new_required(kwarg.scope, kwarg.required, dep_node.caller_context),
                 kwarg,
             )
             resolved_kwargs[kwarg_name] = resolved_kwarg
@@ -62,8 +91,7 @@ class SyncInjector(BaseInjector, Injector):
         resolved = resolver(*resolved_args, **resolved_kwargs)
 
         if inspect.isgenerator(resolved):
-            self._generators_to_close.append(resolved)
-            resolved = next(resolved)
+            resolved = self._enter_generator(context, resolved)
         elif inspect.isasyncgen(resolved):
             raise AsyncInSyncInjectorError(resolved)
         if inspect.iscoroutine(resolved):
@@ -86,7 +114,9 @@ class SyncInjector(BaseInjector, Injector):
             self._require(wrap_type(dep_type), circular_guard)
 
     def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T:
-        self._resolve_depends_on_services(interface, circular_guard)
+        depends_on_guard = circular_guard.copy()
+        depends_on_guard.enter_type(interface)
+        self._resolve_depends_on_services(interface, depends_on_guard)
         resolver = self._get_service_resolver(interface)
         context = self._get_injection_context(
             interface,
@@ -131,7 +161,7 @@ class SyncInjector(BaseInjector, Injector):
         return self._resolve_service(context.copy(), dep_node)
 
     def get_scoped_injector(self) -> "SyncInjector":
-        return SyncInjector(self._services, self._instance_pool.stack())
+        return SyncInjector(self._services, self._instance_pool.stack(), parent=self)
 
 
 sync_injector_w = wrap_type(SyncInjector)

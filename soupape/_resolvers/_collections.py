@@ -1,5 +1,5 @@
 import inspect
-from collections.abc import Awaitable, Iterable
+from collections.abc import Awaitable
 from typing import Any, override
 
 from peritype import FWrap, TWrap
@@ -12,11 +12,6 @@ from soupape._types import InjectionContext, InjectionScope, Injector, ResolveFu
 class ListResolver(ServiceResolver[[], list[Any]]):
     @property
     @override
-    def name(self) -> str:
-        return str(list_any_w)
-
-    @property
-    @override
     def scope(self) -> InjectionScope:
         return InjectionScope.IMMEDIATE
 
@@ -24,11 +19,6 @@ class ListResolver(ServiceResolver[[], list[Any]]):
     @override
     def required(self) -> TWrap[list[Any]]:
         return list_any_w
-
-    @property
-    @override
-    def registered(self) -> None:
-        return None
 
     @override
     def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
@@ -49,42 +39,41 @@ class ListResolver(ServiceResolver[[], list[Any]]):
 
 
 class _ListResolveFunc:
-    def __init__(self, injector: Injector, tw: TWrap[list[Any]]) -> None:
+    def __init__(self, injector: Injector, tw: TWrap[Any]) -> None:
         self._injector = injector
         self._type = tw
+
+    def _get_matching_types(self) -> list[TWrap[Any]]:
+        return [
+            twrap for twrap in self._injector.services.registered_types if self._type.match(twrap, match_mode="sub")
+        ]
 
     async def _continue_async(
         self,
         services: list[Any],
         service: Awaitable[Any],
-        registered_types: Iterable[TWrap[Any]],
+        remaining_types: list[TWrap[Any]],
     ) -> list[Any]:
         services.append(await service)
-        for twrap in registered_types:
-            if self._type.match(twrap, match_mode="sub"):
-                service = self._injector.require(twrap)
-                if inspect.iscoroutine(service):
-                    services.append(await service)
+        for twrap in remaining_types:
+            service = self._injector.require(twrap)
+            if inspect.iscoroutine(service):
+                service = await service
+            services.append(service)
         return services
 
     def __call__(self) -> list[Any] | Awaitable[list[Any]]:
         services: list[Any] = []
-        registered_types = self._injector.services.registered_types
-        for twrap in self._injector.services.registered_types:
-            if self._type.match(twrap, match_mode="sub"):
-                service = self._injector.require(twrap)
-                if inspect.iscoroutine(service):
-                    return self._continue_async(services, service, registered_types)
-                services.append(service)
+        matching_types = self._get_matching_types()
+        for index, twrap in enumerate(matching_types):
+            service = self._injector.require(twrap)
+            if inspect.iscoroutine(service):
+                return self._continue_async(services, service, matching_types[index + 1 :])
+            services.append(service)
         return services
 
 
 class DictResolver(ServiceResolver[[], dict[str, Any]]):
-    @property
-    @override
-    def name(self) -> str:
-        return str(dict_str_any_w)
-
     @property
     @override
     def scope(self) -> InjectionScope:
@@ -94,11 +83,6 @@ class DictResolver(ServiceResolver[[], dict[str, Any]]):
     @override
     def required(self) -> TWrap[dict[str, Any]]:
         return dict_str_any_w
-
-    @property
-    @override
-    def registered(self) -> None:
-        return None
 
     @override
     def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
@@ -119,32 +103,36 @@ class DictResolver(ServiceResolver[[], dict[str, Any]]):
 
 
 class _DictResolveFunc:
-    def __init__(self, injector: Injector, tw: TWrap[list[Any]]) -> None:
+    def __init__(self, injector: Injector, tw: TWrap[Any]) -> None:
         self._injector = injector
         self._type = tw
+
+    def _get_matching_types(self) -> list[TWrap[Any]]:
+        return [
+            twrap for twrap in self._injector.services.registered_types if self._type.match(twrap, match_mode="sub")
+        ]
 
     async def _continue_async(
         self,
         services: dict[str, Any],
         service_twrap: TWrap[Any],
         service: Awaitable[Any],
-        registered_types: Iterable[TWrap[Any]],
+        remaining_types: list[TWrap[Any]],
     ) -> dict[str, Any]:
         services[str(service_twrap)] = await service
-        for twrap in registered_types:
-            if self._type.match(twrap, match_mode="sub"):
-                service = self._injector.require(twrap)
-                if inspect.iscoroutine(service):
-                    services[str(twrap)] = await service
+        for twrap in remaining_types:
+            service = self._injector.require(twrap)
+            if inspect.iscoroutine(service):
+                service = await service
+            services[str(twrap)] = service
         return services
 
     def __call__(self) -> dict[str, Any] | Awaitable[dict[str, Any]]:
         services: dict[str, Any] = {}
-        registered_types = self._injector.services.registered_types
-        for twrap in self._injector.services.registered_types:
-            if self._type.match(twrap, match_mode="sub"):
-                service = self._injector.require(twrap)
-                if inspect.iscoroutine(service):
-                    return self._continue_async(services, twrap, service, registered_types)
-                services[str(twrap)] = service
+        matching_types = self._get_matching_types()
+        for index, twrap in enumerate(matching_types):
+            service = self._injector.require(twrap)
+            if inspect.iscoroutine(service):
+                return self._continue_async(services, twrap, service, matching_types[index + 1 :])
+            services[str(twrap)] = service
         return services

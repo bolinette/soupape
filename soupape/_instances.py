@@ -1,28 +1,45 @@
+import asyncio
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from peritype import TWrap
 from peritype.collections import TypeMap
 
+from soupape._utils import CircularGuardKey
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
+class PendingBuild:
+    future: asyncio.Future[Any]
+    owner: asyncio.Task[Any]
+    trace: tuple[CircularGuardKey, ...]
+
 
 class InstancePool:
     def __init__(self) -> None:
         self._instances = TypeMap[Any, Any]()
-
-    def __len__(self) -> int:
-        return len(self._instances)
+        self._pending = TypeMap[Any, PendingBuild]()
 
     def __contains__(self, twrap: TWrap[Any], /) -> bool:
         return twrap in self._instances
-
-    def __iter__(self) -> Iterator[tuple[TWrap[Any], Any]]:
-        yield from self._instances
 
     def set_instance(self, twrap: TWrap[Any], instance: Any) -> None:
         self._instances[twrap] = instance
 
     def get_instance[InstanceT](self, twrap: TWrap[InstanceT]) -> InstanceT:
         return self._instances[twrap]
+
+    def get_pending(self, twrap: TWrap[Any]) -> PendingBuild | None:
+        if twrap in self._pending:
+            return self._pending[twrap]
+        return None
+
+    def set_pending(self, twrap: TWrap[Any], pending: PendingBuild) -> None:
+        self._pending[twrap] = pending
+
+    def remove_pending(self, twrap: TWrap[Any]) -> None:
+        del self._pending[twrap]
 
 
 class InstancePoolStack:
@@ -58,3 +75,15 @@ class InstancePoolStack:
             if twrap in pool:
                 return pool.get_instance(twrap)
         raise KeyError(f"No instance found for type {twrap}.")
+
+    def get_pending(self, twrap: TWrap[Any]) -> PendingBuild | None:
+        for pool in self:
+            if (pending := pool.get_pending(twrap)) is not None:
+                return pending
+        return None
+
+    def set_pending(self, twrap: TWrap[Any], pending: PendingBuild, root: bool = False) -> None:
+        self._stack[0 if root else -1].set_pending(twrap, pending)
+
+    def remove_pending(self, twrap: TWrap[Any], root: bool = False) -> None:
+        self._stack[0 if root else -1].remove_pending(twrap)

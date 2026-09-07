@@ -16,20 +16,20 @@ class ServiceResolver[**P, T](ABC):
     _empty_resolver_w = wrap_func(_empty_resolver)
 
     @property
-    @abstractmethod
-    def name(self) -> str: ...
+    def name(self) -> str:
+        return type(self).__name__
 
     @property
     @abstractmethod
     def scope(self) -> InjectionScope: ...
 
     @property
-    @abstractmethod
-    def required(self) -> TWrap[T] | None: ...
+    def required(self) -> TWrap[T] | None:
+        return None
 
     @property
-    @abstractmethod
-    def registered(self) -> TWrap[Any] | None: ...
+    def registered(self) -> TWrap[Any] | None:
+        return None
 
     @abstractmethod
     def get_resolve_hints(

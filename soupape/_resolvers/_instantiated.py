@@ -16,23 +16,8 @@ class InstantiatedResolver[T](ServiceResolver[[], T]):
 
     @property
     @override
-    def name(self) -> str:
-        return str(self._interface)
-
-    @property
-    @override
     def scope(self) -> InjectionScope:
         return InjectionScope.IMMEDIATE
-
-    @property
-    @override
-    def required(self) -> TWrap[T]:
-        return self._interface
-
-    @property
-    @override
-    def registered(self) -> None:
-        return None
 
     @override
     def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:

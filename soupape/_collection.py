@@ -1,5 +1,5 @@
 import inspect
-from collections.abc import AsyncGenerator, AsyncIterable, Generator, Iterable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Generator, Iterable, Iterator
 from typing import Any, overload
 
 from escondite import Cache
@@ -14,7 +14,14 @@ from soupape._resolvers import (
 )
 from soupape._types import InjectionScope, ResolveFunction
 from soupape._utils import is_type_like
-from soupape.errors import IncompatibleInterfaceError, MissingInterfaceError, ServiceNotFoundError
+from soupape.errors import (
+    IncompatibleInterfaceError,
+    InvalidResolverReturnHintError,
+    MissingInterfaceError,
+    ServiceAlreadyRegisteredError,
+    ServiceNotFoundError,
+    UnknownInjectionScopeError,
+)
 
 
 class ServiceCollection:
@@ -30,9 +37,9 @@ class ServiceCollection:
 
     def add_resolver(self, resolver: ServiceResolver[..., Any]) -> None:
         if resolver.required is None:
-            raise ValueError("Service resolver must have a required type.")
+            raise MissingInterfaceError(resolver.name)
         if resolver.required in self._registered_services:
-            raise ValueError(f"Service resolver for type {resolver.required} is already registered.")
+            raise ServiceAlreadyRegisteredError(str(resolver.required))
         self._registered_services.add(resolver.required)
         self._resolvers.add(resolver.required, resolver)
 
@@ -50,7 +57,7 @@ class ServiceCollection:
                 case InjectionScope.TRANSIENT:
                     self.add_transient(resolver)
                 case _:
-                    raise ValueError(f"Unknown injection scope: {container.scope}")
+                    raise UnknownInjectionScopeError(container.scope)
 
     def _unpack_resolver_function_return(self, func: FWrap[..., Any]) -> TWrap[Any] | None:
         if not func.is_defined:
@@ -61,15 +68,17 @@ class ServiceCollection:
         except KeyError:
             return None
         if inspect.isasyncgenfunction(original):
-            if hint.match(AsyncGenerator[Any, Any] | AsyncIterable[Any]):
+            if hint.match(AsyncGenerator[Any, Any] | AsyncIterator[Any] | AsyncIterable[Any]):
                 return hint.generic_params[0]
             else:
-                raise TypeError("Async generator resolver functions must have return type hint of AsyncGenerator[T].")
+                raise InvalidResolverReturnHintError(
+                    str(func), ("AsyncGenerator[T]", "AsyncIterator[T]", "AsyncIterable[T]")
+                )
         elif inspect.isgeneratorfunction(original):
-            if hint.match(Iterable[Any] | Generator[Any, Any, Any]):
+            if hint.match(Generator[Any, Any, Any] | Iterator[Any] | Iterable[Any]):
                 return hint.generic_params[0]
             else:
-                raise TypeError("Generator resolver functions must have return type hint of Iterable[T].")
+                raise InvalidResolverReturnHintError(str(func), ("Generator[T]", "Iterator[T]", "Iterable[T]"))
         return hint
 
     def _unpack_registration_args(
@@ -97,7 +106,10 @@ class ServiceCollection:
                 implementation = None
                 func_resolver = arg2
             case _:
-                raise TypeError()
+                raise TypeError(
+                    f"Cannot register a service from arguments {args!r}: expected a type, an interface and an "
+                    "implementation, a resolver function, or an interface and a resolver function."
+                )
 
         if func_resolver is not None:
             if inspect.ismethod(func_resolver) or inspect.isfunction(func_resolver):
@@ -107,7 +119,7 @@ class ServiceCollection:
             func_resolver_return = self._unpack_resolver_function_return(fwrap)
             if interface is None:
                 if func_resolver_return is None:
-                    raise MissingInterfaceError(fwrap)
+                    raise MissingInterfaceError(str(fwrap))
                 interface_w = func_resolver_return
                 implementation_w = func_resolver_return
             else:

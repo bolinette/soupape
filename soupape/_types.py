@@ -11,6 +11,7 @@ from soupape._utils import CircularGuard
 
 if TYPE_CHECKING:
     from soupape import ServiceCollection
+    from soupape._resolvers import ServiceResolver
 
 type ResolveFunction[**P, T] = (
     Callable[P, T]
@@ -73,6 +74,7 @@ class InjectionContext:
     required: TWrap[Any] | None
     positional_args: list[Any] | None = None
     caller_context: CallerContext | None = None
+    singleton_owner: "ServiceResolver[..., Any] | None" = None
 
     def new_required(
         self,
@@ -82,12 +84,25 @@ class InjectionContext:
     ) -> "InjectionContext":
         return InjectionContext(
             injector=self.injector,
-            origin=self.origin,
+            origin=required if required is not None else self.origin,
             scope=scope,
             circular_guard=self.circular_guard.copy(),
             required=required,
             positional_args=None,
             caller_context=caller_context,
+            singleton_owner=self.singleton_owner,
+        )
+
+    def with_singleton_owner(self, owner: "ServiceResolver[..., Any]") -> "InjectionContext":
+        return InjectionContext(
+            injector=self.injector,
+            origin=self.origin,
+            scope=self.scope,
+            circular_guard=self.circular_guard,
+            required=self.required,
+            positional_args=self.positional_args,
+            caller_context=self.caller_context,
+            singleton_owner=owner,
         )
 
     def copy(
@@ -101,6 +116,7 @@ class InjectionContext:
             required=self.required,
             positional_args=self.positional_args,
             caller_context=self.caller_context,
+            singleton_owner=self.singleton_owner,
         )
 
 

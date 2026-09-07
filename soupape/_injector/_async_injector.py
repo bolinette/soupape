@@ -1,12 +1,15 @@
+import asyncio
 import inspect
-from collections.abc import AsyncGenerator, Callable, Coroutine
-from typing import Any, Never, Self, Unpack, cast, overload
+from collections.abc import AsyncGenerator, Callable, Coroutine, Generator
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
+from types import TracebackType
+from typing import Any, Self, Unpack, cast, overload
 
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
 from soupape._collection import ServiceCollection
 from soupape._injector import BaseInjector
-from soupape._instances import InstancePoolStack
+from soupape._instances import InstancePoolStack, PendingBuild
 from soupape._resolvers import DependencyTreeNode
 from soupape._types import (
     InjectionContext,
@@ -14,13 +17,21 @@ from soupape._types import (
     Injector,
     InjectorCallArgs,
 )
-from soupape._utils import CircularGuard
+from soupape._utils import CircularGuard, CircularGuardKey
+from soupape.errors import CircularDependencyError
 
 
 class AsyncInjector(BaseInjector, Injector):
-    def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
-        super().__init__(services, instance_pool)
-        self._async_generators_to_close: list[AsyncGenerator[Any, Never]] = []
+    def __init__(
+        self,
+        services: ServiceCollection,
+        instance_pool: InstancePoolStack | None = None,
+        *,
+        parent: Self | None = None,
+    ) -> None:
+        super().__init__(services, instance_pool, parent=parent)
+        self._exit_stack = AsyncExitStack()
+        self._awaiting: dict[asyncio.Task[Any], PendingBuild] = {}
         self._set_injector_in_services()
 
     @property
@@ -34,37 +45,111 @@ class AsyncInjector(BaseInjector, Injector):
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: Any,
+        traceback: TracebackType | None,
     ) -> None:
-        for gen in self._generators_to_close:
-            try:
-                next(gen)
-            except StopIteration:
-                pass
-        for agen in self._async_generators_to_close:
-            try:
-                await anext(agen)
-            except StopAsyncIteration:
-                pass
+        await self._exit_stack.__aexit__(exc_type, exc_value, traceback)
 
     def _set_injector_in_services(self) -> None:
         self._instance_pool.set_instance(injector_w, self)
         self._instance_pool.set_instance(async_injector_w, self)
+
+    def _enter_generator[T](
+        self,
+        context: InjectionContext,
+        generator: Generator[T, Any, Any],
+    ) -> T:
+        owner = self._get_generator_owner(context)
+        return owner._exit_stack.enter_context(contextmanager(lambda: generator)())
+
+    async def _enter_async_generator[T](
+        self,
+        context: InjectionContext,
+        generator: AsyncGenerator[T, Any],
+    ) -> T:
+        owner = self._get_generator_owner(context)
+        return await owner._exit_stack.enter_async_context(asynccontextmanager(lambda: generator)())
 
     async def _resolve_service[T](
         self,
         context: InjectionContext,
         dep_node: DependencyTreeNode[..., T],
     ) -> T:
-        context.circular_guard.enter(dep_node.resolver.get_instance_function())
+        self._enter_circular_guard(context, dep_node.resolver)
+        context = self._with_singleton_owner(context, dep_node.resolver)
+        if dep_node.registered is None or context.scope not in (InjectionScope.SINGLETON, InjectionScope.SCOPED):
+            return await self._build_service(context, dep_node)
+        key = self._get_instance_key(context, dep_node.registered)
+        if (pending := self._instance_pool.get_pending(key)) is not None:
+            return await self._await_pending(context, pending)
+        return await self._claim_and_build(context, dep_node, key)
 
+    async def _claim_and_build[T](
+        self,
+        context: InjectionContext,
+        dep_node: DependencyTreeNode[..., T],
+        key: TWrap[Any],
+    ) -> T:
+        task = asyncio.current_task()
+        assert task is not None
+        pending = PendingBuild(
+            future=asyncio.get_running_loop().create_future(),
+            owner=task,
+            trace=context.circular_guard.trace,
+        )
+        to_root = context.scope is InjectionScope.SINGLETON
+        self._instance_pool.set_pending(key, pending, root=to_root)
+        try:
+            resolved = await self._build_service(context, dep_node)
+        except asyncio.CancelledError:
+            pending.future.cancel()
+            raise
+        except BaseException as exc:
+            pending.future.set_exception(exc)
+            pending.future.exception()
+            raise
+        else:
+            pending.future.set_result(resolved)
+            return resolved
+        finally:
+            self._instance_pool.remove_pending(key, root=to_root)
+
+    def _get_wait_chain(self, pending: PendingBuild) -> list[PendingBuild]:
+        chain = [pending]
+        seen = {pending.owner}
+        while (next_pending := self._root._awaiting.get(chain[-1].owner)) is not None:
+            if next_pending.owner in seen:
+                break
+            chain.append(next_pending)
+            seen.add(next_pending.owner)
+        return chain
+
+    async def _await_pending(self, context: InjectionContext, pending: PendingBuild) -> Any:
+        task = asyncio.current_task()
+        assert task is not None
+        chain = self._get_wait_chain(pending)
+        if any(step.owner is task for step in chain):
+            trace: list[CircularGuardKey] = [*context.circular_guard.trace]
+            for step in chain:
+                trace.extend(step.trace)
+            raise CircularDependencyError(trace)
+        self._root._awaiting[task] = pending
+        try:
+            return await pending.future
+        finally:
+            del self._root._awaiting[task]
+
+    async def _build_service[T](
+        self,
+        context: InjectionContext,
+        dep_node: DependencyTreeNode[..., T],
+    ) -> T:
         resolved_args: list[Any] = []
         if context.positional_args is not None:
             for arg in context.positional_args:
                 resolved_args.append(arg)
         for arg in dep_node.args:
             resolved_arg = await self._resolve_service(
-                context.new_required(dep_node.scope, arg.required, dep_node.caller_context),
+                context.new_required(arg.scope, arg.required, dep_node.caller_context),
                 arg,
             )
             resolved_args.append(resolved_arg)
@@ -72,7 +157,7 @@ class AsyncInjector(BaseInjector, Injector):
         resolved_kwargs: dict[str, Any] = {}
         for kwarg_name, kwarg in dep_node.kwargs.items():
             resolved_kwarg = await self._resolve_service(
-                context.new_required(dep_node.scope, kwarg.required, dep_node.caller_context),
+                context.new_required(kwarg.scope, kwarg.required, dep_node.caller_context),
                 kwarg,
             )
             resolved_kwargs[kwarg_name] = resolved_kwarg
@@ -81,11 +166,9 @@ class AsyncInjector(BaseInjector, Injector):
         resolved = resolver(*resolved_args, **resolved_kwargs)
 
         if inspect.isgenerator(resolved):
-            self._generators_to_close.append(resolved)
-            resolved = next(resolved)
+            resolved = self._enter_generator(context, resolved)
         elif inspect.isasyncgen(resolved):
-            self._async_generators_to_close.append(resolved)
-            resolved = await anext(resolved)
+            resolved = await self._enter_async_generator(context, resolved)
         if inspect.iscoroutine(resolved):
             resolved = await resolved
 
@@ -106,7 +189,9 @@ class AsyncInjector(BaseInjector, Injector):
             await self._require(wrap_type(dep_type), circular_guard)
 
     async def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T:
-        await self._resolve_depends_on_services(interface, circular_guard)
+        depends_on_guard = circular_guard.copy()
+        depends_on_guard.enter_type(interface)
+        await self._resolve_depends_on_services(interface, depends_on_guard)
         resolver = self._get_service_resolver(interface)
         context = self._get_injection_context(
             interface,
@@ -163,7 +248,7 @@ class AsyncInjector(BaseInjector, Injector):
         return await self._resolve_service(context.copy(), dep_node)
 
     def get_scoped_injector(self) -> "AsyncInjector":
-        return AsyncInjector(self._services, self._instance_pool.stack())
+        return AsyncInjector(self._services, self._instance_pool.stack(), parent=self)
 
 
 async_injector_w = wrap_type(AsyncInjector)

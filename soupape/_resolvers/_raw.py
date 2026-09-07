@@ -11,11 +11,6 @@ from soupape._types import InjectionContext, InjectionScope, ResolveFunction
 class RawTypeResolver(ServiceResolver[[], type[Any]]):
     @property
     @override
-    def name(self) -> str:
-        return str(type_any_w)
-
-    @property
-    @override
     def scope(self) -> InjectionScope:
         return InjectionScope.IMMEDIATE
 
@@ -23,11 +18,6 @@ class RawTypeResolver(ServiceResolver[[], type[Any]]):
     @override
     def required(self) -> TWrap[type[Any]]:
         return type_any_w
-
-    @property
-    @override
-    def registered(self) -> None:
-        return None
 
     @override
     def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
@@ -58,11 +48,6 @@ class _RawTypeResolveFunc[T]:
 class WrappedTypeResolver(ServiceResolver[[], TWrap[Any]]):
     @property
     @override
-    def name(self) -> str:
-        return str(type_any_w_w)
-
-    @property
-    @override
     def scope(self) -> InjectionScope:
         return InjectionScope.IMMEDIATE
 
@@ -70,11 +55,6 @@ class WrappedTypeResolver(ServiceResolver[[], TWrap[Any]]):
     @override
     def required(self) -> TWrap[TWrap[Any]]:
         return type_any_w_w
-
-    @property
-    @override
-    def registered(self) -> None:
-        return None
 
     @override
     def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:

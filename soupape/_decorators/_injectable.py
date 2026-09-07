@@ -19,10 +19,10 @@ class Injectable:
         return InjectableContainer(scope, func)
 
     @overload
-    def transcient[T](self, func: T, *, cache: Cache | None = None) -> T: ...
+    def transient[T](self, func: T, *, cache: Cache | None = None) -> T: ...
     @overload
-    def transcient[T](self, *, cache: Cache | None = None) -> Callable[[T], T]: ...
-    def transcient[T](
+    def transient[T](self, *, cache: Cache | None = None) -> Callable[[T], T]: ...
+    def transient[T](
         self,
         func: T | None = None,
         *,

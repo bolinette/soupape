@@ -15,7 +15,7 @@ from soupape._types import (
     SyncContextManager,
 )
 from soupape._utils import meta
-from soupape.errors import AsyncInSyncInjectorError
+from soupape.errors import AsyncContextManagerInSyncInjectorError
 
 
 class DefaultResolver[**P, T](ServiceResolver[P, T]):
@@ -69,13 +69,15 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
             return _SyncServiceDefaultResolveFunc(self, context)
 
     def get_post_inits(self, twrap: TWrap[Any]) -> Iterable[Callable[..., Any]]:
-        for node in twrap.nodes:
-            for base in node.bases:
-                yield from self.get_post_inits(base)
         inner_type: type[Any] = twrap.inner_type
-        for attr in vars(inner_type).values():
-            if callable(attr) and meta.has(attr, PostInitMetadata.KEY):
-                yield attr
+        hooks: dict[str, Callable[..., Any]] = {}
+        for cls in reversed(inner_type.__mro__):
+            for name, attr in vars(cls).items():
+                if callable(attr) and meta.has(attr, PostInitMetadata.KEY):
+                    hooks[name] = attr
+                else:
+                    hooks.pop(name, None)
+        yield from hooks.values()
 
 
 class _AsyncServiceDefaultResolveFunc[**P, T]:
@@ -115,16 +117,16 @@ class _SyncServiceDefaultResolveFunc[**P, T]:
 
     def __call__(self, *args: Any, **kwargs: Any) -> Generator[T]:
         instance = self.resolver.registered.instantiate(*args, **kwargs)
+        if isinstance(instance, AsyncContextManager) and not isinstance(instance, SyncContextManager):
+            raise AsyncContextManagerInSyncInjectorError(str(self.resolver.registered))
         post_inits = self.resolver.get_post_inits(self.resolver.registered)
         for post_init in post_inits:
-            result = self._injector.call(
+            self._injector.call(
                 post_init,
                 positional_args=[instance],
                 origin=self._context.origin,
                 circular_guard=self._context.circular_guard.copy(),
             )
-            if asyncio.iscoroutine(result):
-                raise AsyncInSyncInjectorError(result)
         if isinstance(instance, SyncContextManager):
             with instance:
                 yield instance  # pyright: ignore[reportReturnType]

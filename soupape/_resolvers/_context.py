@@ -12,11 +12,6 @@ _injection_ctx_w = wrap_type(InjectionContext)
 class InjectionContextResolver(ServiceResolver[[], InjectionContext]):
     @property
     @override
-    def name(self) -> str:
-        return str(_injection_ctx_w)
-
-    @property
-    @override
     def scope(self) -> InjectionScope:
         return InjectionScope.SCOPED
 
@@ -24,11 +19,6 @@ class InjectionContextResolver(ServiceResolver[[], InjectionContext]):
     @override
     def required(self) -> TWrap[InjectionContext]:
         return _injection_ctx_w
-
-    @property
-    @override
-    def registered(self) -> None:
-        return None
 
     @override
     def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:

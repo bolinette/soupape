@@ -7,18 +7,29 @@ from peritype import FWrap, TWrap
 
 from soupape.errors import CircularDependencyError
 
+type CircularGuardKey = Callable[..., Any] | TWrap[Any]
+
 
 class CircularGuard:
     def __init__(self) -> None:
-        self._order: list[Callable[..., Any]] = []
-        self._set: set[Callable[..., Any]] = set()
+        self._order: list[CircularGuardKey] = []
+        self._set: set[CircularGuardKey] = set()
 
     def enter(self, fwrap: FWrap[..., Any]) -> None:
-        func = fwrap.func
-        if func in self._set:
-            raise CircularDependencyError([*self._order, func])
-        self._order.append(func)
-        self._set.add(func)
+        self._enter(fwrap.func)
+
+    def enter_type(self, twrap: TWrap[Any]) -> None:
+        self._enter(twrap)
+
+    def _enter(self, key: CircularGuardKey) -> None:
+        if key in self._set:
+            raise CircularDependencyError([*self._order, key])
+        self._order.append(key)
+        self._set.add(key)
+
+    @property
+    def trace(self) -> tuple[CircularGuardKey, ...]:
+        return tuple(self._order)
 
     def copy(self) -> "CircularGuard":
         new_guard = CircularGuard()
@@ -61,8 +72,6 @@ def get_meta_on_fwrap[**P, T](
 ) -> T | None:
     if meta.has(func.func, key):
         return meta.get(func.func, key)
-    if (func_origin := get_origin(func.func)) is not None and meta.has(func_origin, key):
-        return meta.get(func_origin, key)
     return default
 
 

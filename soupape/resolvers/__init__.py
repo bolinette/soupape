@@ -18,5 +18,6 @@ __all__ = [
     "InjectionScope",
     "ResolveFunction",
     "ServiceResolver",
+    "make_annotated_resolver",
     "resolver",
 ]

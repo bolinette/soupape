@@ -1,5 +1,5 @@
-from collections.abc import Generator, Iterable
-from typing import Any, Never, Self
+from collections.abc import Iterable
+from typing import Any, Self
 
 from peritype import FWrap, TWrap, wrap_type
 
@@ -21,14 +21,26 @@ from soupape._resolvers import (
 )
 from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
 from soupape._utils import CircularGuard, accumulate_meta_on_twrap
-from soupape.errors import MissingTypeHintError, ScopedServiceNotAvailableError, ServiceNotFoundError
+from soupape.errors import (
+    CaptiveDependencyError,
+    MissingTypeHintError,
+    ScopedServiceNotAvailableError,
+    ServiceNotFoundError,
+    UnresolvedAnyTypeError,
+)
 
 
 class BaseInjector(Injector):
-    def __init__(self, services: ServiceCollection, instance_pool: InstancePoolStack | None = None) -> None:
+    def __init__(
+        self,
+        services: ServiceCollection,
+        instance_pool: InstancePoolStack | None = None,
+        *,
+        parent: Self | None = None,
+    ) -> None:
         self._services = services.copy()
         self._instance_pool = instance_pool if instance_pool is not None else InstancePoolStack()
-        self._generators_to_close: list[Generator[Any, Never, Any]] = []
+        self._root = self if parent is None else parent._root
         self._register_common_resolvers()
         self._register_base_services()
 
@@ -65,6 +77,22 @@ class BaseInjector(Injector):
     def is_root_injector(self) -> bool:
         return len(self._instance_pool) == 1
 
+    def _enter_circular_guard(self, context: InjectionContext, resolver: ServiceResolver[..., Any]) -> None:
+        if context.required is not None:
+            context.circular_guard.enter_type(context.required)
+        else:
+            context.circular_guard.enter(resolver.get_instance_function())
+
+    def _with_singleton_owner(self, context: InjectionContext, resolver: ServiceResolver[..., Any]) -> InjectionContext:
+        if resolver.scope is InjectionScope.SINGLETON and resolver.registered is not None:
+            return context.with_singleton_owner(resolver)
+        return context
+
+    def _get_generator_owner(self, context: InjectionContext) -> Self:
+        if context.singleton_owner is not None:
+            return self._root
+        return self
+
     @property
     def instances(self) -> InstancePoolStack:
         return self._instance_pool
@@ -73,30 +101,19 @@ class BaseInjector(Injector):
     def services(self) -> ServiceCollection:
         return self._services
 
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: Any,
-    ) -> None:
-        for gen in self._generators_to_close:
-            try:
-                next(gen)
-            except StopIteration:
-                pass
-
     def _has_instance(self, twrap: TWrap[Any]) -> bool:
         return twrap in self._instance_pool
 
-    def _set_instance(self, context: InjectionContext, twrap: TWrap[Any], instance: Any) -> None:
+    def _get_instance_key(self, context: InjectionContext, twrap: TWrap[Any]) -> TWrap[Any]:
         if twrap.contains_any:
             if context.required is not None:
                 twrap = twrap.specialize_with(context.required)
             if twrap.contains_any:
-                raise ValueError(f"Cannot store instance for type with Any: {twrap}")
+                raise UnresolvedAnyTypeError(str(twrap))
+        return twrap
+
+    def _set_instance(self, context: InjectionContext, twrap: TWrap[Any], instance: Any) -> None:
+        twrap = self._get_instance_key(context, twrap)
         match context.scope:
             case InjectionScope.IMMEDIATE | InjectionScope.TRANSIENT:
                 return
@@ -145,7 +162,9 @@ class BaseInjector(Injector):
         context: InjectionContext,
         resolver: ServiceResolver[..., Any],
     ) -> DependencyTreeNode[..., Any]:
-        context.circular_guard.enter(resolver.get_instance_function())
+        self._enter_circular_guard(context, resolver)
+
+        context = self._with_singleton_owner(context, resolver)
 
         args: list[DependencyTreeNode[..., Any]] = []
         kwargs: dict[str, DependencyTreeNode[..., Any]] = {}
@@ -160,14 +179,29 @@ class BaseInjector(Injector):
             if skip > 0:
                 skip -= 1
                 continue
+
+            if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
+                continue
             if param_name not in hints:
                 raise MissingTypeHintError(param_name, resolver.name)
             hint = hints[param_name]
+
             if isinstance(hint, ServiceResolver):
                 hint_resolver = hint
                 hint = hint_resolver.required
             else:
                 hint_resolver = self._get_service_resolver(hint, scope=context.scope)
+
+            if (
+                (owner := context.singleton_owner) is not None
+                and hint_resolver.scope is InjectionScope.SCOPED
+                and hint_resolver.registered is not None
+            ):
+                raise CaptiveDependencyError(
+                    str(owner.required) if owner.required is not None else owner.name,
+                    str(hint) if hint is not None else hint_resolver.name,
+                )
+
             sub_call_ctx = CallerContext(param_name=param_name, caller=resolver.get_instance_function())
             dep_node = self._build_dependency_tree(
                 context.new_required(hint_resolver.scope, hint, sub_call_ctx),
@@ -175,7 +209,7 @@ class BaseInjector(Injector):
             )
             if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
                 args.append(dep_node)
-            elif param.kind == param.KEYWORD_ONLY:
+            else:
                 kwargs[param_name] = dep_node
 
         return DependencyTreeNode(

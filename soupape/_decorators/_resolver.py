@@ -10,9 +10,6 @@ from soupape._utils import get_meta_on_fwrap, get_meta_on_twrap, meta
 class InjectionCustomResolver:
     KEY = "__soupape_resolver__"
 
-    def __init__(self, resolver: ServiceResolver[..., Any]) -> None:
-        self.resolver = resolver
-
 
 def _set_resolver(resolvable: Callable[..., Any], resolver: ServiceResolver[..., Any]) -> None:
     meta.set(resolvable, InjectionCustomResolver.KEY, resolver)
@@ -40,4 +37,4 @@ def resolver(*args: Any) -> Any:
 
             return inner
         case _:
-            raise TypeError()
+            raise TypeError(f"Unknown parameters {args}")
