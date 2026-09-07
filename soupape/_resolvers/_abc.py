@@ -6,7 +6,7 @@ from typing import Any
 
 from peritype import FWrap, TWrap, wrap_func
 
-from soupape._types import CallerContext, InjectionContext, InjectionScope, ResolveFunction
+from soupape._types import CallerContext, InjectionScope, ResolutionContext, ResolutionFunction
 
 
 class ServiceResolver[**P, T](ABC):
@@ -32,18 +32,18 @@ class ServiceResolver[**P, T](ABC):
         return None
 
     @abstractmethod
-    def get_resolve_hints(
-        self, context: InjectionContext
+    def get_resolution_hints(
+        self, context: ResolutionContext
     ) -> "Mapping[str, TWrap[Any] | ServiceResolver[..., Any]]": ...
 
     @abstractmethod
     def get_instance_function(self) -> FWrap[P, T]: ...
 
     @abstractmethod
-    def get_resolve_signature(self) -> inspect.Signature: ...
+    def get_resolution_signature(self) -> inspect.Signature: ...
 
     @abstractmethod
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[P, T]: ...
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[P, T]: ...
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)

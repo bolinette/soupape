@@ -6,7 +6,7 @@ from peritype import FWrap, TWrap
 
 from soupape._resolvers import ServiceResolver
 from soupape._resolvers._utils import dict_str_any_w, list_any_w
-from soupape._types import InjectionContext, InjectionScope, Injector, ResolveFunction
+from soupape._types import InjectionScope, Injector, ResolutionContext, ResolutionFunction
 
 
 class ListResolver(ServiceResolver[[], list[Any]]):
@@ -21,7 +21,7 @@ class ListResolver(ServiceResolver[[], list[Any]]):
         return list_any_w
 
     @override
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
@@ -29,11 +29,11 @@ class ListResolver(ServiceResolver[[], list[Any]]):
         return self._empty_resolver_w
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
+    def get_resolution_signature(self) -> inspect.Signature:
         return self._empty_resolver_w.signature
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., list[Any]]:
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., list[Any]]:
         assert context.required is not None
         return _ListResolveFunc(context.injector, context.required.generic_params[0])  # pyright: ignore[reportReturnType]
 
@@ -85,7 +85,7 @@ class DictResolver(ServiceResolver[[], dict[str, Any]]):
         return dict_str_any_w
 
     @override
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
@@ -93,11 +93,11 @@ class DictResolver(ServiceResolver[[], dict[str, Any]]):
         return self._empty_resolver_w
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
+    def get_resolution_signature(self) -> inspect.Signature:
         return self._empty_resolver_w.signature
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., dict[str, Any]]:
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., dict[str, Any]]:
         assert context.required is not None
         return _DictResolveFunc(context.injector, context.required.generic_params[1])  # pyright: ignore[reportReturnType]
 

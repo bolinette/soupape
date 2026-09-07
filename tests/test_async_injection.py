@@ -17,7 +17,7 @@ from peritype import wrap_type
 from soupape import AsyncInjector, ServiceCollection, post_init
 from soupape._utils import add_type_to_type_globals
 from soupape.errors import CircularDependencyError
-from soupape.resolvers import make_annotated_resolver
+from soupape.extension import annotation_resolver
 
 pytestmark = pytest.mark.asyncio
 
@@ -907,7 +907,7 @@ class TestAsyncAnnotatedResolvers:
             assert result == 43
 
     async def test_async_annotated_resolver_of_random_class(self) -> None:
-        """`make_annotated_resolver` attaches a coroutine resolver to a bare marker."""
+        """`annotation_resolver` attaches a coroutine resolver to a bare marker."""
         services = ServiceCollection()
 
         class Database:
@@ -930,7 +930,7 @@ class TestAsyncAnnotatedResolvers:
         services.add_singleton(Database)
         services.add_scoped(Service1)
         services.add_scoped(Service2)
-        make_annotated_resolver(RandomAnnotation, resolve_service)
+        annotation_resolver(RandomAnnotation, resolve_service)
 
         async with AsyncInjector(services).get_scoped_injector() as injector:
             s2 = await injector.require(Service2)

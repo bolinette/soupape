@@ -4,7 +4,7 @@ from typing import Any, override
 from peritype import FWrap, TWrap
 
 from soupape._resolvers import ServiceResolver
-from soupape._types import InjectionContext, InjectionScope, ResolveFunction
+from soupape._types import InjectionScope, ResolutionContext, ResolutionFunction
 
 
 class FunctionResolver[**P, T](ServiceResolver[P, T]):
@@ -42,7 +42,7 @@ class FunctionResolver[**P, T](ServiceResolver[P, T]):
         return self._registered
 
     @override
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
         if not self._func.is_defined and context.required is not None:
             func = self._func.specialize_from_return(context.required)
         else:
@@ -54,11 +54,11 @@ class FunctionResolver[**P, T](ServiceResolver[P, T]):
         return self._func
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
+    def get_resolution_signature(self) -> inspect.Signature:
         return self._func.signature
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[P, T]:
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[P, T]:
         return _FunctionResolveFunc[P, T](self._func)
 
 

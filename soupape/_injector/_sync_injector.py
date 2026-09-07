@@ -82,7 +82,7 @@ class SyncInjector(BaseInjector, Injector):
                 resolved_args.append(arg)
         for arg in dep_node.args:
             resolved_arg = self._resolve_service(
-                context.new_required(arg.scope, arg.required, dep_node.caller_context),
+                context.new_required(arg.scope, arg.required, arg.caller_context),
                 arg,
             )
             resolved_args.append(resolved_arg)
@@ -90,12 +90,12 @@ class SyncInjector(BaseInjector, Injector):
         resolved_kwargs: dict[str, Any] = {}
         for kwarg_name, kwarg in dep_node.kwargs.items():
             resolved_kwarg = self._resolve_service(
-                context.new_required(kwarg.scope, kwarg.required, dep_node.caller_context),
+                context.new_required(kwarg.scope, kwarg.required, kwarg.caller_context),
                 kwarg,
             )
             resolved_kwargs[kwarg_name] = resolved_kwarg
 
-        resolver = dep_node.resolver.get_resolve_func(context)
+        resolver = dep_node.resolver.get_resolution_func(context)
         resolved = resolver(*resolved_args, **resolved_kwargs)
 
         if inspect.isgenerator(resolved):
@@ -132,8 +132,8 @@ class SyncInjector(BaseInjector, Injector):
             circular_guard,
             required=interface,
         )
-        dep_node = self._build_dependency_tree(context.copy(), resolver)
-        resolved = self._resolve_service(context.copy(), dep_node)
+        dep_node = self._build_dependency_tree(context.fork(), resolver)
+        resolved = self._resolve_service(context.fork(), dep_node)
         return resolved
 
     @overload
@@ -165,8 +165,8 @@ class SyncInjector(BaseInjector, Injector):
             positional_args=kwargs.get("positional_args"),
         )
         resolver = self._get_function_resolver(fwrap)
-        dep_node = self._build_dependency_tree(context.copy(), resolver)
-        return self._resolve_service(context.copy(), dep_node)
+        dep_node = self._build_dependency_tree(context.fork(), resolver)
+        return self._resolve_service(context.fork(), dep_node)
 
     def get_scoped_injector(self) -> "SyncInjector":
         return SyncInjector(self._services, self._instance_pool.stack(), parent=self)

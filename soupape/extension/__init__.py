@@ -1,23 +1,23 @@
 from soupape._types import (
-    InjectionContext as InjectionContext,
+    CallerContext as CallerContext,
+    ResolutionContext as ResolutionContext,
     InjectionScope as InjectionScope,
-    ResolveFunction as ResolveFunction,
+    ResolutionFunction as ResolutionFunction,
 )
 from soupape._resolvers import (
     ServiceResolver as ServiceResolver,
 )
 from soupape._decorators import (
+    annotation_resolver as annotation_resolver,
     resolver as resolver,
-)
-from soupape._extensions import (
-    make_annotated_resolver as make_annotated_resolver,
 )
 
 __all__ = [
-    "InjectionContext",
+    "CallerContext",
     "InjectionScope",
-    "ResolveFunction",
+    "ResolutionContext",
+    "ResolutionFunction",
     "ServiceResolver",
-    "make_annotated_resolver",
+    "annotation_resolver",
     "resolver",
 ]

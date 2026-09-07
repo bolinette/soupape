@@ -5,7 +5,7 @@ from peritype import FWrap, TWrap
 
 from soupape._resolvers import ServiceResolver
 from soupape._resolvers._utils import type_any_w, type_any_w_w
-from soupape._types import InjectionContext, InjectionScope, ResolveFunction
+from soupape._types import InjectionScope, ResolutionContext, ResolutionFunction
 
 
 class RawTypeResolver(ServiceResolver[[], type[Any]]):
@@ -20,7 +20,7 @@ class RawTypeResolver(ServiceResolver[[], type[Any]]):
         return type_any_w
 
     @override
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
@@ -28,11 +28,11 @@ class RawTypeResolver(ServiceResolver[[], type[Any]]):
         return self._empty_resolver_w
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
+    def get_resolution_signature(self) -> inspect.Signature:
         return self._empty_resolver_w.signature
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., type[Any]]:
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., type[Any]]:
         assert context.required is not None
         return _RawTypeResolveFunc(context.required)
 
@@ -57,7 +57,7 @@ class WrappedTypeResolver(ServiceResolver[[], TWrap[Any]]):
         return type_any_w_w
 
     @override
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
@@ -65,11 +65,11 @@ class WrappedTypeResolver(ServiceResolver[[], TWrap[Any]]):
         return self._empty_resolver_w
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
+    def get_resolution_signature(self) -> inspect.Signature:
         return self._empty_resolver_w.signature
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., TWrap[Any]]:
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., TWrap[Any]]:
         assert context.required is not None
         return _WrappedTypeResolveFunc(context.required)
 

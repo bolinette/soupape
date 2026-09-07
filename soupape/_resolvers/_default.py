@@ -11,7 +11,8 @@ from soupape._types import (
     AsyncContextManager,
     InjectionContext,
     InjectionScope,
-    ResolveFunction,
+    ResolutionContext,
+    ResolutionFunction,
     SyncContextManager,
 )
 from soupape._utils import meta
@@ -54,7 +55,7 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
         return self._implementation
 
     @override
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
         return self._implementation.init.get_signature_hints(belongs_to=context.origin)
 
     @override
@@ -62,11 +63,12 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
         return self._implementation.init
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
+    def get_resolution_signature(self) -> inspect.Signature:
         return self._implementation.signature
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[P, T]:
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[P, T]:
+        assert isinstance(context, InjectionContext)
         if context.injector.is_async:
             return _AsyncServiceDefaultResolveFunc(self, context)
         else:

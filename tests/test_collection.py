@@ -16,7 +16,7 @@ from soupape.errors import (
     ServiceNotFoundError,
     UnknownInjectionScopeError,
 )
-from soupape.resolvers import InjectionScope
+from soupape.extension import InjectionScope
 
 
 class TestRegistration:

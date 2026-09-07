@@ -1,4 +1,4 @@
-from soupape._types import Injector as Injector
+from soupape._types import CallerContext as CallerContext, Injector as Injector
 from soupape._decorators import (
     injectable as injectable,
     post_init as post_init,
@@ -10,6 +10,7 @@ from soupape._injector import AsyncInjector as AsyncInjector, SyncInjector as Sy
 
 __all__ = [
     "AsyncInjector",
+    "CallerContext",
     "Injector",
     "ServiceCollection",
     "SyncInjector",

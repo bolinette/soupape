@@ -15,9 +15,10 @@ import pytest
 from conftest import InjectorFactory
 from peritype import FWrap, TWrap, wrap_func, wrap_type
 
-from soupape import Injector, ServiceCollection, depends_on, post_init
+from soupape import CallerContext, Injector, ServiceCollection, depends_on, post_init
 from soupape._utils import add_type_to_type_globals
 from soupape.errors import (
+    CallerContextNotAvailableError,
     CaptiveDependencyError,
     CircularDependencyError,
     MissingTypeHintError,
@@ -25,12 +26,12 @@ from soupape.errors import (
     ServiceNotFoundError,
     UnresolvedAnyTypeError,
 )
-from soupape.resolvers import (
-    InjectionContext,
+from soupape.extension import (
     InjectionScope,
-    ResolveFunction,
+    ResolutionContext,
+    ResolutionFunction,
     ServiceResolver,
-    make_annotated_resolver,
+    annotation_resolver,
     resolver,
 )
 
@@ -58,7 +59,7 @@ class MinimalResolver(ServiceResolver[..., Any]):
         return InjectionScope.SINGLETON
 
     @override
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
@@ -66,11 +67,11 @@ class MinimalResolver(ServiceResolver[..., Any]):
         return self._empty_resolver_w
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
+    def get_resolution_signature(self) -> inspect.Signature:
         return self._empty_resolver_w.signature
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., Any]:
         required = context.required
         assert required is not None
         self.required_types.append(required)
@@ -1162,12 +1163,12 @@ class TestDependencyScopes:
         assert exc_info.value.singleton == SingletonService.__qualname__
         assert exc_info.value.dependency == ScopedService.__qualname__
 
-    async def test_singleton_depending_on_injection_context(self, make_injector: InjectorFactory) -> None:
-        """`InjectionContext` is never stored in a scope, so a singleton may receive it."""
+    async def test_singleton_depending_on_resolve_context(self, make_injector: InjectorFactory) -> None:
+        """`ResolutionContext` is never stored in a scope, so a singleton may receive it."""
         services = ServiceCollection()
 
         class SingletonService:
-            def __init__(self, ctx: InjectionContext) -> None:
+            def __init__(self, ctx: ResolutionContext) -> None:
                 self.ctx = ctx
 
         services.add_singleton(SingletonService)
@@ -2290,29 +2291,71 @@ class TestInjectorRequirements:
             assert all(service.services.is_registered(rtype) for rtype in services.registered_types)
             assert not all(services.is_registered(rtype) for rtype in service.services.registered_types)
 
-    async def test_require_injection_context(self, make_injector: InjectorFactory) -> None:
-        """Each injected `InjectionContext` carries the caller that asked for it."""
+    async def test_require_resolve_context(self, make_injector: InjectorFactory) -> None:
+        """An injected `ResolutionContext` describes the service receiving it and how it was requested."""
         services = ServiceCollection()
 
         class Service1:
-            def __init__(self, ctx: InjectionContext) -> None:
+            def __init__(self, ctx: ResolutionContext) -> None:
                 self.ctx = ctx
 
         class Service2:
-            def __init__(self, s1: Service1, ctx: InjectionContext) -> None:
+            def __init__(self, s1: Service1, ctx: ResolutionContext) -> None:
                 self.s1 = s1
                 self.ctx = ctx
 
         services.add_scoped(Service1)
-        services.add_scoped(Service2)
+        services.add_transient(Service2)
 
         async with make_injector(services).get_scoped_injector() as injector:
             s2 = await injector.require(Service2)
-            assert s2.ctx is not s2.s1.ctx
+            assert s2.ctx.injector is injector.injector
+            assert s2.ctx.required == wrap_type(Service2)
+            assert s2.ctx.scope is InjectionScope.TRANSIENT
             assert s2.ctx.caller_context is None
+            assert s2.s1.ctx.required == wrap_type(Service1)
+            assert s2.s1.ctx.scope is InjectionScope.SCOPED
             assert s2.s1.ctx.caller_context is not None
             assert s2.s1.ctx.caller_context.param_name == "s1"
             assert s2.s1.ctx.caller_context.caller.func is Service2.__init__
+
+    async def test_require_caller_context(self, make_injector: InjectorFactory) -> None:
+        """An injected `CallerContext` names the parameter and constructor that asked for the service."""
+        services = ServiceCollection()
+
+        class Logger:
+            def __init__(self, caller: CallerContext) -> None:
+                self.caller = caller
+
+        class Service:
+            def __init__(self, logger: Logger) -> None:
+                self.logger = logger
+
+        services.add_transient(Logger)
+        services.add_singleton(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service)
+
+        assert service.logger.caller.param_name == "logger"
+        assert service.logger.caller.caller.func is Service.__init__
+
+    async def test_fail_require_caller_context_directly(self, make_injector: InjectorFactory) -> None:
+        """A service needing a `CallerContext` cannot be required directly, nobody asked for it."""
+        services = ServiceCollection()
+
+        class Logger:
+            def __init__(self, caller: CallerContext) -> None:
+                self.caller = caller
+
+        services.add_transient(Logger)
+
+        async with make_injector(services) as injector:
+            with pytest.raises(CallerContextNotAvailableError) as exc_info:
+                await injector.require(Logger)
+
+        assert exc_info.value.code == "soupape.caller_context.not_available"
+        assert exc_info.value.service == Logger.__qualname__
 
 
 class TestDependsOn:
@@ -2525,7 +2568,7 @@ class TestCustomResolvers:
                 return InjectionScope.SINGLETON
 
             @override
-            def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+            def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
                 return {"run_args": wrap_type(CommandRunArgs)}
 
             @override
@@ -2533,11 +2576,11 @@ class TestCustomResolvers:
                 return self.func
 
             @override
-            def get_resolve_signature(self) -> inspect.Signature:
+            def get_resolution_signature(self) -> inspect.Signature:
                 return self.func.signature
 
             @override
-            def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+            def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., Any]:
                 def resolve(run_args: CommandRunArgs) -> Any:
                     return run_args.number[self.position]
 
@@ -2560,7 +2603,7 @@ class TestCustomResolvers:
                 return InjectionScope.SINGLETON
 
             @override
-            def get_resolve_hints(self, context: InjectionContext) -> dict[str, ServiceResolver[..., Any]]:
+            def get_resolution_hints(self, context: ResolutionContext) -> dict[str, ServiceResolver[..., Any]]:
                 return {a: CustomArgResolver(a, i) for i, a in enumerate(self.func.parameters)}
 
             @override
@@ -2568,11 +2611,11 @@ class TestCustomResolvers:
                 return self.func
 
             @override
-            def get_resolve_signature(self) -> inspect.Signature:
+            def get_resolution_signature(self) -> inspect.Signature:
                 return self.func.signature
 
             @override
-            def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+            def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., Any]:
                 def resolve(*args: Any, **kwargs: Any) -> Any:
                     return self.twrap.instantiate(*args, **kwargs)
 
@@ -2627,7 +2670,7 @@ class TestCustomResolvers:
                 return InjectionScope.SINGLETON
 
             @override
-            def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+            def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
                 return {"run_args": wrap_type(CommandRunArgs)}
 
             @override
@@ -2635,11 +2678,11 @@ class TestCustomResolvers:
                 return self.func
 
             @override
-            def get_resolve_signature(self) -> inspect.Signature:
+            def get_resolution_signature(self) -> inspect.Signature:
                 return self.func.signature
 
             @override
-            def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+            def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., Any]:
                 def resolve(run_args: CommandRunArgs) -> Any:
                     return run_args.number[self.position]
 
@@ -2661,7 +2704,7 @@ class TestCustomResolvers:
                 return InjectionScope.SINGLETON
 
             @override
-            def get_resolve_hints(self, context: InjectionContext) -> dict[str, ServiceResolver[..., Any]]:
+            def get_resolution_hints(self, context: ResolutionContext) -> dict[str, ServiceResolver[..., Any]]:
                 return {a: CustomArgResolver(a, i) for i, a in enumerate(self.func.parameters)}
 
             @override
@@ -2669,11 +2712,11 @@ class TestCustomResolvers:
                 return self.func
 
             @override
-            def get_resolve_signature(self) -> inspect.Signature:
+            def get_resolution_signature(self) -> inspect.Signature:
                 return self.func.signature
 
             @override
-            def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[..., Any]:
+            def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., Any]:
                 def resolve(*args: Any, **kwargs: Any) -> Any:
                     return self.func(*args, **kwargs)
 
@@ -2786,7 +2829,7 @@ class TestAnnotatedResolvers:
             assert result == 43
 
     async def test_annotated_resolver_of_random_class(self, make_injector: InjectorFactory) -> None:
-        """`make_annotated_resolver` attaches a resolver to a marker with no `__resolve__`."""
+        """`annotation_resolver` attaches a resolver to a marker with no `__resolve__`."""
         services = ServiceCollection()
 
         class Database:
@@ -2809,11 +2852,47 @@ class TestAnnotatedResolvers:
         services.add_singleton(Database)
         services.add_scoped(Service1)
         services.add_scoped(Service2)
-        make_annotated_resolver(RandomAnnotation, resolve_service)
+        annotation_resolver(RandomAnnotation, resolve_service)
 
         async with make_injector(services).get_scoped_injector() as injector:
             s2 = await injector.require(Service2)
             assert s2.s1.value == 42
+
+    async def test_annotation_resolver_decorator(self, make_injector: InjectorFactory) -> None:
+        """`annotation_resolver` also works as a decorator on the resolution function."""
+        services = ServiceCollection()
+
+        class Database:
+            def data(self) -> int:
+                return 42
+
+        class Service1:
+            def __init__(self, value: int) -> None:
+                self.value = value
+
+        class RandomAnnotation: ...
+
+        @annotation_resolver(RandomAnnotation)
+        def resolve_service(_self: RandomAnnotation, db: Database) -> Service1:
+            return Service1(db.data())
+
+        class Service2:
+            def __init__(self, s1: Annotated[Service1, RandomAnnotation()]) -> None:
+                self.s1 = s1
+
+        services.add_singleton(Database)
+        services.add_scoped(Service1)
+        services.add_scoped(Service2)
+
+        async with make_injector(services).get_scoped_injector() as injector:
+            s2 = await injector.require(Service2)
+            assert s2.s1.value == 42
+        assert resolve_service(RandomAnnotation(), Database()).value == 42
+
+    async def test_fail_annotation_resolver_without_arguments(self) -> None:
+        """`annotation_resolver` rejects a call that names no annotation class."""
+        with pytest.raises(TypeError, match="Unknown parameters"):
+            annotation_resolver()  # pyright: ignore[reportCallIssue]
 
 
 class TestErrors:

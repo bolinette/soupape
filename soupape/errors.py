@@ -46,6 +46,15 @@ class CaptiveDependencyError(SoupapeError):
         self.dependency = dependency
 
 
+class CallerContextNotAvailableError(SoupapeError):
+    def __init__(self, service: str) -> None:
+        super().__init__(
+            "soupape.caller_context.not_available",
+            f"Service '{service}' was required directly and has no caller.",
+        )
+        self.service = service
+
+
 class AsyncInSyncInjectorError(SoupapeError):
     def __init__(self, coro: Awaitable[Any] | AsyncIterable[Any]) -> None:
         super().__init__(

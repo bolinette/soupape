@@ -5,7 +5,7 @@ from peritype import FWrap, TWrap
 
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import ServiceResolver
-from soupape._types import InjectionContext, InjectionScope, ResolveFunction
+from soupape._types import InjectionScope, ResolutionContext, ResolutionFunction
 from soupape.errors import ServiceNotFoundError
 
 
@@ -20,7 +20,7 @@ class InstantiatedResolver[T](ServiceResolver[[], T]):
         return InjectionScope.IMMEDIATE
 
     @override
-    def get_resolve_hints(self, context: InjectionContext) -> dict[str, TWrap[Any]]:
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
         return {}
 
     @override
@@ -28,11 +28,11 @@ class InstantiatedResolver[T](ServiceResolver[[], T]):
         return self._empty_resolver_w
 
     @override
-    def get_resolve_signature(self) -> inspect.Signature:
+    def get_resolution_signature(self) -> inspect.Signature:
         return self._empty_resolver_w.signature
 
     @override
-    def get_resolve_func(self, context: InjectionContext) -> ResolveFunction[[], T]:
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[[], T]:
         return _InstantiatedResolveFunc[T](context.injector.instances, self._implementation)  # pyright: ignore[reportReturnType]
 
 

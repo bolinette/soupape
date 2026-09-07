@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from soupape import ServiceCollection
     from soupape._resolvers import ServiceResolver
 
-type ResolveFunction[**P, T] = (
+type ResolutionFunction[**P, T] = (
     Callable[P, T]
     | Callable[P, Generator[T, Never, Any]]
     | Callable[P, Iterable[T]]
@@ -66,15 +66,29 @@ class CallerContext:
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
-class InjectionContext:
+class ResolutionContext:
     injector: Injector
     origin: TWrap[Any] | None
     scope: "InjectionScope"
-    circular_guard: CircularGuard
     required: TWrap[Any] | None
-    positional_args: list[Any] | None = None
     caller_context: CallerContext | None = None
+
+    def copy(self) -> "ResolutionContext":
+        return ResolutionContext(
+            injector=self.injector,
+            origin=self.origin,
+            scope=self.scope,
+            required=self.required,
+            caller_context=self.caller_context,
+        )
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
+class InjectionContext(ResolutionContext):
+    circular_guard: CircularGuard
+    positional_args: list[Any] | None = None
     singleton_owner: "ServiceResolver[..., Any] | None" = None
+    parent: "InjectionContext | None" = None
 
     def new_required(
         self,
@@ -91,6 +105,7 @@ class InjectionContext:
             positional_args=None,
             caller_context=caller_context,
             singleton_owner=self.singleton_owner,
+            parent=self,
         )
 
     def with_singleton_owner(self, owner: "ServiceResolver[..., Any]") -> "InjectionContext":
@@ -103,11 +118,10 @@ class InjectionContext:
             positional_args=self.positional_args,
             caller_context=self.caller_context,
             singleton_owner=owner,
+            parent=self.parent,
         )
 
-    def copy(
-        self,
-    ) -> "InjectionContext":
+    def fork(self) -> "InjectionContext":
         return InjectionContext(
             injector=self.injector,
             origin=self.origin,
@@ -117,6 +131,7 @@ class InjectionContext:
             positional_args=self.positional_args,
             caller_context=self.caller_context,
             singleton_owner=self.singleton_owner,
+            parent=self.parent,
         )
 
 

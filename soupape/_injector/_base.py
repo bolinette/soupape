@@ -6,19 +6,20 @@ from peritype import FWrap, TWrap, wrap_type
 from soupape._collection import ServiceCollection
 from soupape._decorators import get_custom_resolver
 from soupape._decorators._depends_on import ServiceDependencyMetadata
-from soupape._extensions import get_annotated_resolver
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import (
+    CallerContextResolver,
     DependencyTreeNode,
     DictResolver,
     FunctionResolver,
-    InjectionContextResolver,
     InstantiatedResolver,
     ListResolver,
     RawTypeResolver,
+    ResolutionContextResolver,
     ServiceResolver,
     WrappedTypeResolver,
 )
+from soupape._traits import get_annotated_resolver
 from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
 from soupape._utils import CircularGuard, accumulate_meta_on_twrap
 from soupape.errors import (
@@ -50,7 +51,8 @@ class BaseInjector(Injector):
             self._services.add_resolver(WrappedTypeResolver())
             self._services.add_resolver(ListResolver())
             self._services.add_resolver(DictResolver())
-            self._services.add_resolver(InjectionContextResolver())
+            self._services.add_resolver(ResolutionContextResolver())
+            self._services.add_resolver(CallerContextResolver())
 
     def _register_base_services(self) -> None:
         if self.is_root_injector:
@@ -169,14 +171,14 @@ class BaseInjector(Injector):
 
         args: list[DependencyTreeNode[..., Any]] = []
         kwargs: dict[str, DependencyTreeNode[..., Any]] = {}
-        hints = resolver.get_resolve_hints(context)
+        hints = resolver.get_resolution_hints(context)
 
         if context.positional_args is not None:
             skip = len(context.positional_args)
         else:
             skip = 0
 
-        for param_name, param in resolver.get_resolve_signature().parameters.items():
+        for param_name, param in resolver.get_resolution_signature().parameters.items():
             if skip > 0:
                 skip -= 1
                 continue
