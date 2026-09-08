@@ -1,5 +1,5 @@
 from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Coroutine, Generator, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto, unique
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Never, Protocol, override, runtime_checkable
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Never, Protocol, override, runtime_checka
 from peritype import FWrap, TWrap
 
 from soupape._instances import InstancePoolStack
-from soupape._utils import CircularGuard
+from soupape._utils import Absent, CircularGuard
 
 if TYPE_CHECKING:
     from soupape import ServiceCollection
@@ -68,6 +68,11 @@ class InjectionScope(Enum):
 class CallerContext:
     caller: FWrap[..., Any]
     param_name: str
+    default_value: Any | Absent = field(default=Absent())
+
+    @property
+    def has_default_value(self) -> bool:
+        return self.default_value is not Absent()
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)

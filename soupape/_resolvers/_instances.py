@@ -45,3 +45,29 @@ class _InstantiatedResolveFunc[T]:
         if self._type not in self._instances:
             raise ServiceNotFoundError(str(self._type))
         return self._instances.get_instance(self._type)
+
+
+class DirectInstanceResolver[T](ServiceResolver[[], T]):
+    def __init__(self, value: T) -> None:
+        self._value = value
+
+    @property
+    @override
+    def scope(self) -> InjectionScope:
+        return InjectionScope.IMMEDIATE
+
+    @override
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
+        return {}
+
+    @override
+    def get_instance_function(self) -> FWrap[[], T]:
+        return self._empty_resolver_w
+
+    @override
+    def get_resolution_signature(self) -> inspect.Signature:
+        return self._empty_resolver_w.signature
+
+    @override
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[[], T]:
+        return lambda: self._value

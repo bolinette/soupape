@@ -13,6 +13,7 @@ from soupape._resolvers import (
     CallerContextResolver,
     DependencyTreeNode,
     DictResolver,
+    DirectInstanceResolver,
     FunctionResolver,
     InstantiatedResolver,
     ListResolver,
@@ -23,7 +24,7 @@ from soupape._resolvers import (
 )
 from soupape._traits import get_annotated_resolver
 from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
-from soupape._utils import CircularGuard, ResolverCache, accumulate_meta_on_twrap
+from soupape._utils import Absent, CircularGuard, ResolverCache, accumulate_meta_on_twrap
 from soupape.errors import (
     CaptiveDependencyError,
     MissingTypeHintError,
@@ -172,6 +173,7 @@ class BaseInjector(Injector):
         interface: TWrap[Any],
         *,
         scope: InjectionScope = InjectionScope.IMMEDIATE,
+        caller_context: CallerContext | None = None,
     ) -> ServiceResolver[..., Any]:
         if (annotated := get_annotated_resolver(interface, scope, self._cache)) is not None:
             return annotated
@@ -181,6 +183,10 @@ class BaseInjector(Injector):
             return self._services.get_resolver(interface)
         if self._has_instance(interface):
             return self._make_instantiated_resolver(interface)
+        if caller_context is not None and caller_context.has_default_value:
+            return DirectInstanceResolver(caller_context.default_value)
+        if interface.nullable:
+            return DirectInstanceResolver(None)
         raise ServiceNotFoundError(str(interface))
 
     def _get_function_resolver(self, fwrap: FWrap[..., Any]) -> ServiceResolver[..., Any]:
@@ -241,11 +247,17 @@ class BaseInjector(Injector):
                 raise MissingTypeHintError(param_name, resolver.name)
             hint = hints[param_name]
 
+            caller_context = CallerContext(
+                param_name=param_name,
+                caller=resolver.get_instance_function(),
+                default_value=Absent() if param.default is param.empty else param.default,
+            )
+
             if isinstance(hint, ServiceResolver):
                 hint_resolver = hint
                 hint = hint_resolver.required
             else:
-                hint_resolver = self._get_service_resolver(hint, scope=resolver.scope)
+                hint_resolver = self._get_service_resolver(hint, scope=resolver.scope, caller_context=caller_context)
 
             if (
                 singleton_owner is not None
@@ -261,7 +273,7 @@ class BaseInjector(Injector):
                 hint_resolver,
                 required=hint,
                 origin=hint if hint is not None else origin,
-                caller_context=CallerContext(param_name=param_name, caller=resolver.get_instance_function()),
+                caller_context=caller_context,
                 parent=node,
                 singleton_owner=singleton_owner,
                 circular_guard=circular_guard.copy(),

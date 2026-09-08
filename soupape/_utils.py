@@ -1,6 +1,6 @@
 import itertools
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any, TypeGuard, get_origin
+from typing import TYPE_CHECKING, Any, ClassVar, TypeGuard, get_origin
 
 from hafersack import Hafersack
 from peritype import FWrap, TWrap
@@ -12,6 +12,22 @@ if TYPE_CHECKING:
     from soupape._traits import AnnotatedResolutionFunction
 
 type CircularGuardKey = Callable[..., Any] | TWrap[Any]
+
+
+class Absent:
+    __slots__ = ()
+    _instance: "ClassVar[Absent | None]" = None
+
+    def __new__(cls) -> "Absent":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "ABSENT"
+
+    def __bool__(self) -> bool:
+        return False
 
 
 class ResolverCache:

@@ -285,6 +285,44 @@ class TestBasicInjection:
         assert service.dep.greet() == "Hello from Dep!"
         assert service.rest == ()
 
+    async def test_inject_missing_service_with_default_set(self, make_injector: InjectorFactory) -> None:
+        """A missing service with a default set in the signature injects the default value"""
+        services = ServiceCollection()
+
+        class Service:
+            def __init__(self, value: int = 42) -> None:
+                self.value = value
+
+        services.add_singleton(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service)
+
+        assert service.value == 42
+
+    async def test_inject_missing_optional_service(self, make_injector: InjectorFactory) -> None:
+        """A missing service with a default set in the signature injects the default value"""
+        services = ServiceCollection()
+
+        class Dep: ...
+
+        class Service:
+            def __init__(self, dep: Dep | None) -> None:
+                self.dep = dep
+
+        services.add_scoped(Service)
+
+        async with make_injector(services) as injector:
+            async with injector.get_scoped_injector() as subinjector:
+                service = await subinjector.require(Service)
+            assert service.dep is None
+
+            injector.services.add_scoped(Dep)
+
+            async with injector.get_scoped_injector() as subinjector:
+                service = await subinjector.require(Service)
+            assert service.dep is not None
+
 
 class TestGenericInjection:
     async def test_inject_generic_type(self, make_injector: InjectorFactory) -> None:
