@@ -33,7 +33,7 @@ class InstantiatedResolver[T](ServiceResolver[[], T]):
 
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[[], T]:
-        return _InstantiatedResolveFunc[T](context.injector.instances, self._implementation)  # pyright: ignore[reportReturnType]
+        return _InstantiatedResolveFunc[T](context.injector.instances, self._implementation)
 
 
 class _InstantiatedResolveFunc[T]:

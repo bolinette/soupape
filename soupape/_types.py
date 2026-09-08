@@ -13,15 +13,16 @@ if TYPE_CHECKING:
     from soupape import ServiceCollection
     from soupape._resolvers import DependencyTreeNode
 
-type ResolutionFunction[**P, T] = (
-    Callable[P, T]
-    | Callable[P, Generator[T, Never, Any]]
-    | Callable[P, Iterable[T]]
-    | Callable[P, AsyncGenerator[T, Never]]
-    | Callable[P, AsyncIterable[T]]
-    | Callable[P, Coroutine[Any, Any, T]]
-    | Callable[P, Awaitable[T]]
-)
+type ResolutionFunction[**P, T] = Callable[
+    P,
+    T
+    | Generator[T, Never, Any]
+    | Iterable[T]
+    | AsyncGenerator[T, Never]
+    | AsyncIterable[T]
+    | Coroutine[Any, Any, T]
+    | Awaitable[T],
+]
 
 
 class Injector(Protocol):

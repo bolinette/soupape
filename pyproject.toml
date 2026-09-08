@@ -15,11 +15,16 @@ package = "soupape"
 module-root = ""
 
 [dependency-groups]
-dev = ["ruff>=0.14.11"]
+dev = [
+    "pyright>=1.1.411",
+    "ruff>=0.14.11",
+]
 test = ["pytest>=9.0.2", "pytest-asyncio>=1.3.0", "pytest-cov>=7.0.0"]
 
 [tool.pyright]
+include = ["soupape", "tests"]
 typeCheckingMode = "strict"
+reportUnnecessaryTypeIgnoreComment = "error"
 
 [tool.ruff]
 line-length = 120

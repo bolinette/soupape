@@ -35,7 +35,7 @@ class ListResolver(ServiceResolver[[], list[Any]]):
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., list[Any]]:
         assert context.required is not None
-        return _ListResolveFunc(context, context.required.generic_params[0])  # pyright: ignore[reportReturnType]
+        return _ListResolveFunc(context, context.required.generic_params[0])
 
 
 class _ListResolveFunc:
@@ -101,7 +101,7 @@ class DictResolver(ServiceResolver[[], dict[str, Any]]):
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., dict[str, Any]]:
         assert context.required is not None
-        return _DictResolveFunc(context, context.required.generic_params[1])  # pyright: ignore[reportReturnType]
+        return _DictResolveFunc(context, context.required.generic_params[1])
 
 
 class _DictResolveFunc:

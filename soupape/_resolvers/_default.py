@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-from collections.abc import AsyncGenerator, Callable, Generator, Iterable
+from collections.abc import AsyncGenerator, Callable, Coroutine, Generator, Iterable
 from typing import Any, override
 
 from peritype import FWrap, TWrap
@@ -95,36 +95,47 @@ class _AsyncServiceDefaultResolveFunc[**P, T]:
         self._resolver = resolver
         self._context = context
 
-    async def __call__(self, *args: Any, **kwargs: Any) -> AsyncGenerator[T]:
+    def __call__(self, *args: Any, **kwargs: Any) -> T | Coroutine[Any, Any, T] | AsyncGenerator[T]:
         instance = self._resolver.registered.instantiate(*args, **kwargs)
+        if self._resolver.is_async_context_manager or self._resolver.is_sync_context_manager:
+            return self._enter(instance)
+        if self._resolver.post_inits:
+            return self._initialize(instance)
+        return instance
+
+    async def _initialize(self, instance: T) -> T:
         for post_init in self._resolver.post_inits:
             result = self._context.call(post_init, [instance])
             if asyncio.iscoroutine(result):
                 await result
+        return instance
+
+    async def _enter(self, instance: T) -> AsyncGenerator[T]:
+        if self._resolver.post_inits:
+            await self._initialize(instance)
         if self._resolver.is_async_context_manager:
-            async with instance:
-                yield instance  # pyright: ignore[reportReturnType]
+            async with instance:  # pyright: ignore[reportGeneralTypeIssues]
+                yield instance
             return
-        if self._resolver.is_sync_context_manager:
-            with instance:
-                yield instance  # pyright: ignore[reportReturnType]
-            return
-        yield instance
+        with instance:  # pyright: ignore[reportGeneralTypeIssues]
+            yield instance
 
 
 class _SyncServiceDefaultResolveFunc[**P, T]:
     def __init__(self, resolver: "DefaultResolver[P, T]", context: ResolutionContext) -> None:
-        self.resolver = resolver
+        self._resolver = resolver
         self._context = context
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Generator[T]:
-        instance = self.resolver.registered.instantiate(*args, **kwargs)
-        if self.resolver.is_async_context_manager and not self.resolver.is_sync_context_manager:
-            raise AsyncContextManagerInSyncInjectorError(str(self.resolver.registered))
-        for post_init in self.resolver.post_inits:
+    def __call__(self, *args: Any, **kwargs: Any) -> T | Generator[T]:
+        instance = self._resolver.registered.instantiate(*args, **kwargs)
+        if self._resolver.is_async_context_manager and not self._resolver.is_sync_context_manager:
+            raise AsyncContextManagerInSyncInjectorError(str(self._resolver.registered))
+        for post_init in self._resolver.post_inits:
             self._context.call(post_init, [instance])
-        if self.resolver.is_sync_context_manager:
-            with instance:
-                yield instance  # pyright: ignore[reportReturnType]
-            return
-        yield instance
+        if self._resolver.is_sync_context_manager:
+            return self._enter(instance)
+        return instance
+
+    def _enter(self, instance: T) -> Generator[T]:
+        with instance:  # pyright: ignore[reportGeneralTypeIssues]
+            yield instance
