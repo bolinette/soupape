@@ -23,7 +23,7 @@ from soupape._resolvers import (
 )
 from soupape._traits import get_annotated_resolver
 from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
-from soupape._utils import CircularGuard, accumulate_meta_on_twrap
+from soupape._utils import CircularGuard, ResolverCache, accumulate_meta_on_twrap
 from soupape.errors import (
     CaptiveDependencyError,
     MissingTypeHintError,
@@ -44,6 +44,7 @@ class BaseInjector(Injector):
         self._services = services.copy()
         self._instance_pool = instance_pool if instance_pool is not None else InstancePoolStack()
         self._root = self if parent is None else parent._root
+        self._cache = ResolverCache() if parent is None else parent._cache
         self._register_common_resolvers()
         self._register_base_services()
 
@@ -61,16 +62,18 @@ class BaseInjector(Injector):
             self._instance_pool.set_instance(service_collection_w, self.services)
 
     def _get_context(self, node: DependencyTreeNode[..., Any]) -> InjectionContext:
-        return InjectionContext(
-            injector=self,
-            origin=node.origin,
-            scope=node.scope,
-            required=node.required,
-            caller_context=node.caller_context,
-            node=node,
-            require_within=self._require_within,
-            call_within=self._call_within,
-        )
+        if node.context is None:
+            node.context = InjectionContext(
+                injector=self,
+                origin=node.origin,
+                scope=node.scope,
+                required=node.required,
+                caller_context=node.caller_context,
+                node=node,
+                require_within=self._require_within,
+                call_within=self._call_within,
+            )
+        return node.context
 
     @property
     def is_root_injector(self) -> bool:
@@ -170,9 +173,9 @@ class BaseInjector(Injector):
         *,
         scope: InjectionScope = InjectionScope.IMMEDIATE,
     ) -> ServiceResolver[..., Any]:
-        if (annotated := get_annotated_resolver(interface, scope)) is not None:
+        if (annotated := get_annotated_resolver(interface, scope, self._cache)) is not None:
             return annotated
-        if (resolv_meta := get_custom_resolver(interface)) is not None:
+        if (resolv_meta := get_custom_resolver(interface, self._cache)) is not None:
             return resolv_meta
         if self._services.is_registered(interface):
             return self._services.get_resolver(interface)
@@ -181,7 +184,7 @@ class BaseInjector(Injector):
         raise ServiceNotFoundError(str(interface))
 
     def _get_function_resolver(self, fwrap: FWrap[..., Any]) -> ServiceResolver[..., Any]:
-        if (resolv_meta := get_custom_resolver(fwrap)) is not None:
+        if (resolv_meta := get_custom_resolver(fwrap, self._cache)) is not None:
             return resolv_meta
         return FunctionResolver(InjectionScope.IMMEDIATE, fwrap)
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from peritype import FWrap, TWrap, wrap_func
 
-from soupape._types import CallerContext, InjectionScope, ResolutionContext, ResolutionFunction
+from soupape._types import CallerContext, InjectionContext, InjectionScope, ResolutionContext, ResolutionFunction
 from soupape._utils import CircularGuardKey
 
 
@@ -47,7 +47,7 @@ class ServiceResolver[**P, T](ABC):
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[P, T]: ...
 
 
-@dataclass(kw_only=True, frozen=True, slots=True)
+@dataclass(kw_only=True, slots=True)
 class DependencyTreeNode[**P, T]:
     scope: InjectionScope
     args: "list[DependencyTreeNode[..., Any]]"
@@ -60,3 +60,4 @@ class DependencyTreeNode[**P, T]:
     singleton_owner: ServiceResolver[..., Any] | None
     trace: tuple[CircularGuardKey, ...]
     parent: "DependencyTreeNode[..., Any] | None"
+    context: InjectionContext | None = None

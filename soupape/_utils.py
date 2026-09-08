@@ -1,13 +1,23 @@
 import itertools
 from collections.abc import Callable, Iterable
-from typing import Any, TypeGuard, get_origin
+from typing import TYPE_CHECKING, Any, TypeGuard, get_origin
 
 from hafersack import Hafersack
 from peritype import FWrap, TWrap
 
 from soupape.errors import CircularDependencyError
 
+if TYPE_CHECKING:
+    from soupape._resolvers import ServiceResolver
+    from soupape._traits import AnnotatedResolutionFunction
+
 type CircularGuardKey = Callable[..., Any] | TWrap[Any]
+
+
+class ResolverCache:
+    def __init__(self) -> None:
+        self.custom_resolvers: dict[TWrap[Any] | FWrap[..., Any], ServiceResolver[..., Any] | None] = {}
+        self.annotated_markers: dict[TWrap[Any], AnnotatedResolutionFunction | None] = {}
 
 
 class CircularGuard:

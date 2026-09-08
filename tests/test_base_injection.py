@@ -2936,6 +2936,99 @@ class TestCustomResolvers:
             resolver()  # pyright: ignore[reportCallIssue]
 
 
+class TaggingResolver(ServiceResolver[..., Any]):
+    """Instantiates the required type with no arguments and marks the instance as custom-built."""
+
+    @property
+    @override
+    def scope(self) -> InjectionScope:
+        return InjectionScope.TRANSIENT
+
+    @override
+    def get_resolution_hints(self, context: ResolutionContext) -> dict[str, TWrap[Any]]:
+        return {}
+
+    @override
+    def get_instance_function(self) -> FWrap[..., Any]:
+        return self._empty_resolver_w
+
+    @override
+    def get_resolution_signature(self) -> inspect.Signature:
+        return self._empty_resolver_w.signature
+
+    @override
+    def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., Any]:
+        required = context.required
+        assert required is not None
+
+        def resolve() -> Any:
+            instance = required.instantiate()
+            instance.custom = True
+            return instance
+
+        return resolve
+
+
+class TestResolverLookupCache:
+    async def test_resolver_attached_after_first_resolution_is_seen_by_new_injectors(
+        self, make_injector: InjectorFactory
+    ) -> None:
+        """An injector keeps the resolver lookup it made; a new injector sees a later-attached resolver."""
+        services = ServiceCollection()
+
+        class Service:
+            def __init__(self) -> None:
+                self.custom = False
+
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            before = await injector.require(Service)
+            resolver(Service, TaggingResolver())
+            same_injector = await injector.require(Service)
+        async with make_injector(services) as new_injector:
+            after = await new_injector.require(Service)
+
+        assert before.custom is False
+        assert same_injector.custom is False
+        assert after.custom is True
+
+    async def test_annotation_resolver_attached_after_first_resolution_is_seen_by_new_injectors(
+        self, make_injector: InjectorFactory
+    ) -> None:
+        """Same rule for a resolution function attached to an already-seen marker."""
+        services = ServiceCollection()
+
+        class Service1:
+            def __init__(self) -> None:
+                self.custom = False
+
+        class Marker: ...
+
+        class Service2:
+            def __init__(self, s1: Annotated[Service1, Marker()]) -> None:
+                self.s1 = s1
+
+        def resolve_service1(_marker: Marker) -> Service1:
+            service = Service1()
+            service.custom = True
+            return service
+
+        services.add_transient(Service1)
+        services.add_transient(Service2)
+
+        async with make_injector(services) as injector:
+            before = await injector.require(Service2)
+            annotation_resolver(Marker, resolve_service1)
+            same_injector = await injector.require(Service2)
+        async with make_injector(services) as new_injector:
+            after = await new_injector.require(Service2)
+
+        assert before.s1.custom is False
+        assert same_injector.s1.custom is False
+        assert after.s1.custom is True
+
+
 class TestAnnotatedResolvers:
     async def test_annotated_resolver_from_class(self, make_injector: InjectorFactory) -> None:
         """An `Annotated` marker with `__resolve__` builds the constructor parameter."""
