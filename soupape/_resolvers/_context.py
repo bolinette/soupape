@@ -12,9 +12,9 @@ _caller_ctx_w = wrap_type(CallerContext)
 
 
 def _get_service_frame(context: ResolutionContext) -> ResolutionContext:
-    if isinstance(context, InjectionContext) and context.parent is not None:
-        return context.parent
-    return context
+    if isinstance(context, InjectionContext):
+        return context.parent_frame()
+    return context.copy()
 
 
 class ResolutionContextResolver(ServiceResolver[[], ResolutionContext]):
@@ -42,7 +42,7 @@ class ResolutionContextResolver(ServiceResolver[[], ResolutionContext]):
 
     @override
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[..., ResolutionContext]:
-        snapshot = _get_service_frame(context).copy()
+        snapshot = _get_service_frame(context)
         return lambda: snapshot
 
 

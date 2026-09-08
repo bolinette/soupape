@@ -60,23 +60,14 @@ class BaseInjector(Injector):
         if self.is_root_injector:
             self._instance_pool.set_instance(service_collection_w, self.services)
 
-    def _get_injection_context(
-        self,
-        origin: TWrap[Any] | None,
-        scope: InjectionScope,
-        circular_guard: CircularGuard | None = None,
-        required: TWrap[Any] | None = None,
-        positional_args: list[Any] | None = None,
-        named_args: dict[str, Any] | None = None,
-    ) -> InjectionContext:
+    def _get_context(self, node: DependencyTreeNode[..., Any]) -> InjectionContext:
         return InjectionContext(
             injector=self,
-            origin=origin,
-            scope=scope,
-            required=required,
-            positional_args=positional_args,
-            named_args=named_args,
-            circular_guard=circular_guard or CircularGuard(),
+            origin=node.origin,
+            scope=node.scope,
+            required=node.required,
+            caller_context=node.caller_context,
+            node=node,
             require_within=self._require_within,
             call_within=self._call_within,
         )
@@ -114,19 +105,19 @@ class BaseInjector(Injector):
         twrap = interface if isinstance(interface, TWrap) else wrap_type(interface)
         return self._require(twrap, circular_guard)
 
-    def _enter_circular_guard(self, context: InjectionContext, resolver: ServiceResolver[..., Any]) -> None:
-        if context.required is not None:
-            context.circular_guard.enter_type(context.required)
+    def _enter_circular_guard(
+        self,
+        circular_guard: CircularGuard,
+        required: TWrap[Any] | None,
+        resolver: ServiceResolver[..., Any],
+    ) -> None:
+        if required is not None:
+            circular_guard.enter_type(required)
         else:
-            context.circular_guard.enter(resolver.get_instance_function())
+            circular_guard.enter(resolver.get_instance_function())
 
-    def _with_singleton_owner(self, context: InjectionContext, resolver: ServiceResolver[..., Any]) -> InjectionContext:
-        if resolver.scope is InjectionScope.SINGLETON and resolver.registered is not None:
-            return context.with_singleton_owner(resolver)
-        return context
-
-    def _get_generator_owner(self, context: InjectionContext) -> Self:
-        if context.singleton_owner is not None:
+    def _get_generator_owner(self, node: DependencyTreeNode[..., Any]) -> Self:
+        if node.singleton_owner is not None:
             return self._root
         return self
 
@@ -143,17 +134,19 @@ class BaseInjector(Injector):
     def _has_instance(self, twrap: TWrap[Any]) -> bool:
         return twrap in self._instance_pool
 
-    def _get_instance_key(self, context: InjectionContext, twrap: TWrap[Any]) -> TWrap[Any]:
+    def _get_instance_key(self, required: TWrap[Any] | None, twrap: TWrap[Any]) -> TWrap[Any]:
         if twrap.contains_any:
-            if context.required is not None:
-                twrap = twrap.specialize_with(context.required)
+            if required is not None:
+                twrap = twrap.specialize_with(required)
             if twrap.contains_any:
                 raise UnresolvedAnyTypeError(str(twrap))
         return twrap
 
-    def _set_instance(self, context: InjectionContext, twrap: TWrap[Any], instance: Any) -> None:
-        twrap = self._get_instance_key(context, twrap)
-        match context.scope:
+    def _set_instance(self, node: DependencyTreeNode[..., Any], instance: Any) -> None:
+        if node.registered is None:
+            return
+        twrap = self._get_instance_key(node.required, node.registered)
+        match node.scope:
             case InjectionScope.IMMEDIATE | InjectionScope.TRANSIENT:
                 return
             case InjectionScope.SINGLETON:
@@ -192,35 +185,54 @@ class BaseInjector(Injector):
             return resolv_meta
         return FunctionResolver(InjectionScope.IMMEDIATE, fwrap)
 
-    def _get_storage_key(self, context: InjectionContext, dep_node: DependencyTreeNode[..., Any]) -> TWrap[Any] | None:
-        if dep_node.registered is None or context.scope not in (InjectionScope.SINGLETON, InjectionScope.SCOPED):
+    def _get_storage_key(self, node: DependencyTreeNode[..., Any]) -> TWrap[Any] | None:
+        if node.registered is None or node.scope not in (InjectionScope.SINGLETON, InjectionScope.SCOPED):
             return None
-        return self._get_instance_key(context, dep_node.registered)
+        return self._get_instance_key(node.required, node.registered)
 
     def _build_dependency_tree(
         self,
-        context: InjectionContext,
         resolver: ServiceResolver[..., Any],
+        *,
+        required: TWrap[Any] | None,
+        origin: TWrap[Any] | None,
+        caller_context: CallerContext | None,
+        parent: DependencyTreeNode[..., Any] | None,
+        singleton_owner: ServiceResolver[..., Any] | None,
+        circular_guard: CircularGuard,
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
     ) -> DependencyTreeNode[..., Any]:
-        self._enter_circular_guard(context, resolver)
+        self._enter_circular_guard(circular_guard, required, resolver)
+        if resolver.scope is InjectionScope.SINGLETON and resolver.registered is not None:
+            singleton_owner = resolver
 
-        context = self._with_singleton_owner(context, resolver)
-
-        args: list[DependencyTreeNode[..., Any]] = []
-        kwargs: dict[str, DependencyTreeNode[..., Any]] = {}
-        hints = resolver.get_resolution_hints(context)
+        node = DependencyTreeNode(
+            scope=resolver.scope,
+            args=[],
+            kwargs={},
+            resolver=resolver,
+            required=required,
+            registered=resolver.registered,
+            origin=origin,
+            caller_context=caller_context,
+            singleton_owner=singleton_owner,
+            trace=circular_guard.trace,
+            parent=parent,
+        )
+        hints = resolver.get_resolution_hints(self._get_context(node))
 
         parameters = resolver.get_resolution_signature().parameters
-        skip = len(context.positional_args) if context.positional_args is not None else 0
-        named_args = context.named_args or {}
-        self._check_named_args(resolver, parameters, skip, named_args)
+        skip = len(positional_args) if positional_args is not None else 0
+        named = named_args or {}
+        self._check_named_args(resolver, parameters, skip, named)
 
         for param_name, param in parameters.items():
             if skip > 0:
                 skip -= 1
                 continue
 
-            if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD) or param_name in named_args:
+            if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD) or param_name in named:
                 continue
             if param_name not in hints:
                 raise MissingTypeHintError(param_name, resolver.name)
@@ -230,37 +242,33 @@ class BaseInjector(Injector):
                 hint_resolver = hint
                 hint = hint_resolver.required
             else:
-                hint_resolver = self._get_service_resolver(hint, scope=context.scope)
+                hint_resolver = self._get_service_resolver(hint, scope=resolver.scope)
 
             if (
-                (owner := context.singleton_owner) is not None
+                singleton_owner is not None
                 and hint_resolver.scope is InjectionScope.SCOPED
                 and hint_resolver.registered is not None
             ):
                 raise CaptiveDependencyError(
-                    str(owner.required) if owner.required is not None else owner.name,
+                    str(singleton_owner.required) if singleton_owner.required is not None else singleton_owner.name,
                     str(hint) if hint is not None else hint_resolver.name,
                 )
 
-            sub_call_ctx = CallerContext(param_name=param_name, caller=resolver.get_instance_function())
-            dep_node = self._build_dependency_tree(
-                context.new_required(hint_resolver.scope, hint, sub_call_ctx),
+            child = self._build_dependency_tree(
                 hint_resolver,
+                required=hint,
+                origin=hint if hint is not None else origin,
+                caller_context=CallerContext(param_name=param_name, caller=resolver.get_instance_function()),
+                parent=node,
+                singleton_owner=singleton_owner,
+                circular_guard=circular_guard.copy(),
             )
             if param.kind in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
-                args.append(dep_node)
+                node.args.append(child)
             else:
-                kwargs[param_name] = dep_node
+                node.kwargs[param_name] = child
 
-        return DependencyTreeNode(
-            scope=resolver.scope,
-            args=args,
-            kwargs=kwargs,
-            resolver=resolver,
-            required=context.required,
-            registered=resolver.registered,
-            caller_context=context.caller_context,
-        )
+        return node
 
     def _check_named_args(
         self,
@@ -269,6 +277,8 @@ class BaseInjector(Injector):
         skip: int,
         named_args: dict[str, Any],
     ) -> None:
+        if not named_args:
+            return
         accepts_any_name = any(param.kind is param.VAR_KEYWORD for param in parameters.values())
         positional_names = set(list(parameters)[:skip])
         for name in named_args:

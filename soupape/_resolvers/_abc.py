@@ -7,6 +7,7 @@ from typing import Any
 from peritype import FWrap, TWrap, wrap_func
 
 from soupape._types import CallerContext, InjectionScope, ResolutionContext, ResolutionFunction
+from soupape._utils import CircularGuardKey
 
 
 class ServiceResolver[**P, T](ABC):
@@ -54,4 +55,8 @@ class DependencyTreeNode[**P, T]:
     resolver: ServiceResolver[P, T]
     required: TWrap[T] | None
     registered: TWrap[Any] | None
+    origin: TWrap[Any] | None
     caller_context: CallerContext | None
+    singleton_owner: ServiceResolver[..., Any] | None
+    trace: tuple[CircularGuardKey, ...]
+    parent: "DependencyTreeNode[..., Any] | None"

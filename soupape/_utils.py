@@ -31,6 +31,13 @@ class CircularGuard:
     def trace(self) -> tuple[CircularGuardKey, ...]:
         return tuple(self._order)
 
+    @classmethod
+    def from_trace(cls, trace: tuple[CircularGuardKey, ...]) -> "CircularGuard":
+        guard = cls()
+        guard._order = list(trace)
+        guard._set = set(trace)
+        return guard
+
     def copy(self) -> "CircularGuard":
         new_guard = CircularGuard()
         new_guard._order = self._order.copy()

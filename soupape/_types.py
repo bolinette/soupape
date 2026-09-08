@@ -11,7 +11,7 @@ from soupape._utils import CircularGuard
 
 if TYPE_CHECKING:
     from soupape import ServiceCollection
-    from soupape._resolvers import ServiceResolver
+    from soupape._resolvers import DependencyTreeNode
 
 type ResolutionFunction[**P, T] = (
     Callable[P, T]
@@ -100,17 +100,13 @@ class ResolutionContext:
 
 @dataclass(kw_only=True, frozen=True, slots=True)
 class InjectionContext(ResolutionContext):
-    circular_guard: CircularGuard
+    node: "DependencyTreeNode[..., Any]"
     require_within: RequireWithin
     call_within: CallWithin
-    positional_args: list[Any] | None = None
-    named_args: dict[str, Any] | None = None
-    singleton_owner: "ServiceResolver[..., Any] | None" = None
-    parent: "InjectionContext | None" = None
 
     @override
     def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]:
-        return self.require_within(interface, self.circular_guard.copy())
+        return self.require_within(interface, CircularGuard.from_trace(self.node.trace))
 
     @override
     def call[T](
@@ -120,60 +116,19 @@ class InjectionContext(ResolutionContext):
         named_args: dict[str, Any] | None = None,
     ) -> T | Awaitable[T]:
         return self.call_within(
-            callable, positional_args or [], named_args or {}, self.origin, self.circular_guard.copy()
+            callable, positional_args or [], named_args or {}, self.origin, CircularGuard.from_trace(self.node.trace)
         )
 
-    def new_required(
-        self,
-        scope: "InjectionScope",
-        required: TWrap[Any] | None,
-        caller_context: CallerContext | None = None,
-    ) -> "InjectionContext":
-        return InjectionContext(
+    def parent_frame(self) -> ResolutionContext:
+        parent = self.node.parent
+        if parent is None:
+            return self.copy()
+        return ResolutionContext(
             injector=self.injector,
-            origin=required if required is not None else self.origin,
-            scope=scope,
-            circular_guard=self.circular_guard.copy(),
-            required=required,
-            positional_args=None,
-            named_args=None,
-            caller_context=caller_context,
-            require_within=self.require_within,
-            call_within=self.call_within,
-            singleton_owner=self.singleton_owner,
-            parent=self,
-        )
-
-    def with_singleton_owner(self, owner: "ServiceResolver[..., Any]") -> "InjectionContext":
-        return InjectionContext(
-            injector=self.injector,
-            origin=self.origin,
-            scope=self.scope,
-            circular_guard=self.circular_guard,
-            required=self.required,
-            positional_args=self.positional_args,
-            named_args=self.named_args,
-            caller_context=self.caller_context,
-            require_within=self.require_within,
-            call_within=self.call_within,
-            singleton_owner=owner,
-            parent=self.parent,
-        )
-
-    def fork(self) -> "InjectionContext":
-        return InjectionContext(
-            injector=self.injector,
-            origin=self.origin,
-            scope=self.scope,
-            circular_guard=self.circular_guard.copy(),
-            required=self.required,
-            positional_args=self.positional_args,
-            named_args=self.named_args,
-            caller_context=self.caller_context,
-            require_within=self.require_within,
-            call_within=self.call_within,
-            singleton_owner=self.singleton_owner,
-            parent=self.parent,
+            origin=parent.origin,
+            scope=parent.scope,
+            required=parent.required,
+            caller_context=parent.caller_context,
         )
 
 
