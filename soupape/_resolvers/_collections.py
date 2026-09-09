@@ -47,7 +47,7 @@ class _ListResolveFunc:
         return [
             twrap
             for twrap in self._context.injector.services.registered_types
-            if self._type.match(twrap, match_mode="sub")
+            if self._type.match(twrap, lineage="sub")
         ]
 
     async def _continue_async(
@@ -113,7 +113,7 @@ class _DictResolveFunc:
         return [
             twrap
             for twrap in self._context.injector.services.registered_types
-            if self._type.match(twrap, match_mode="sub")
+            if self._type.match(twrap, lineage="sub")
         ]
 
     async def _continue_async(

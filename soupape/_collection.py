@@ -15,6 +15,7 @@ from soupape._resolvers import (
 from soupape._types import InjectionScope, ResolutionFunction
 from soupape._utils import is_type_like
 from soupape.errors import (
+    AmbiguousServiceMatchError,
     IncompatibleInterfaceError,
     InvalidResolverReturnHintError,
     MissingInterfaceError,
@@ -132,7 +133,7 @@ class ServiceCollection:
             implementation_w = wrap_type(implementation)
             resolver = DefaultResolver(scope, interface_w, implementation_w)
 
-        if not interface_w.match(implementation_w, match_mode="sub"):
+        if not interface_w.match(implementation_w, lineage="sub"):
             raise IncompatibleInterfaceError(str(interface_w), str(implementation_w))
 
         return resolver
@@ -147,11 +148,23 @@ class ServiceCollection:
             interface = wrap_type(interface)
         if interface in self._registered_services:
             return self._resolvers[interface]
-        if self._registered_services.contains_matching(interface):
-            matched = self._registered_services.first_matching(interface)
-            assert matched is not None
-            return self._resolvers[matched]
-        raise ServiceNotFoundError(str(interface))
+        return self._get_best_resolver(interface)
+
+    def _get_best_resolver[T](self, interface: TWrap[T]) -> ServiceResolver[..., T]:
+        all_results = self._registered_services.match_all(interface)
+        if len(all_results) == 0:
+            raise ServiceNotFoundError(str(interface))
+        sorted_results = sorted(
+            ((m, r) for m, r in all_results.items()),
+            key=lambda t: t[1],
+            reverse=True,
+        )
+        candidate, match_result = sorted_results[0]
+        if len(sorted_results) > 1:
+            other_matches = [m for m, r in sorted_results if m is not candidate and r == match_result]
+            if len(other_matches) > 0:
+                raise AmbiguousServiceMatchError(str(interface), [str(t) for t in (candidate, *other_matches)])
+        return self._resolvers[candidate]
 
     @property
     def registered_types(self) -> Iterator[TWrap[Any]]:

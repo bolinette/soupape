@@ -18,6 +18,7 @@ from peritype import FWrap, TWrap, wrap_func, wrap_type
 from soupape import CallerContext, Injector, ServiceCollection, depends_on, post_init
 from soupape._utils import add_type_to_type_globals
 from soupape.errors import (
+    AmbiguousServiceMatchError,
     CallerContextNotAvailableError,
     CaptiveDependencyError,
     CircularDependencyError,
@@ -558,6 +559,116 @@ class TestInterfaceRegistration:
         assert service1.fetch_data() == "Service1 Data"
         assert service2.fetch_data() == "Service2 Data"
         assert service3.fetch_data() == "Service3 Data"
+
+    async def test_fail_ambiguous_catch_all_match(self, make_injector: InjectorFactory) -> None:
+        """Two partial catch-all registrations matching equally well cannot be told apart."""
+        services = ServiceCollection()
+
+        class Service[K, V]: ...
+
+        class Service1[K, V](Service[K, V]): ...
+
+        class Service2[K, V](Service[K, V]): ...
+
+        services.add_singleton(Service[Any, str], Service1)
+        services.add_singleton(Service[str, Any], Service2)
+
+        async with make_injector(services) as injector:
+            with pytest.raises(AmbiguousServiceMatchError) as exc_info:
+                await injector.require(Service[str, str])
+
+        assert exc_info.value.code == "soupape.service.ambiguous_match"
+        assert f"'{Service.__qualname__}[str, str]'" in exc_info.value.message
+        assert f"{Service.__qualname__}[Any, str]" in exc_info.value.message
+        assert f"{Service.__qualname__}[str, Any]" in exc_info.value.message
+
+    async def test_ambiguous_catch_alls_still_resolve_unambiguous_requests(
+        self, make_injector: InjectorFactory
+    ) -> None:
+        """Registrations that would be ambiguous together still serve requests only one of them matches."""
+        services = ServiceCollection()
+
+        class Service[K, V]: ...
+
+        class Service1[K, V](Service[K, V]): ...
+
+        class Service2[K, V](Service[K, V]): ...
+
+        services.add_singleton(Service[Any, str], Service1)
+        services.add_singleton(Service[str, Any], Service2)
+
+        async with make_injector(services) as injector:
+            service1 = await injector.require(Service[int, str])
+            service2 = await injector.require(Service[str, int])
+
+        assert isinstance(service1, Service1)
+        assert isinstance(service2, Service2)
+
+    async def test_exact_match_wins_over_ambiguous_catch_alls(self, make_injector: InjectorFactory) -> None:
+        """An exact registration is picked even when several catch-alls match the same request."""
+        services = ServiceCollection()
+
+        class Service[K, V]: ...
+
+        class Service1[K, V](Service[K, V]): ...
+
+        class Service2[K, V](Service[K, V]): ...
+
+        class Service3[K, V](Service[K, V]): ...
+
+        services.add_singleton(Service[Any, str], Service1)
+        services.add_singleton(Service[str, Any], Service2)
+        services.add_singleton(Service[str, str], Service3)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service[str, str])
+
+        assert isinstance(service, Service3)
+
+    async def test_optional_dependency_prefers_exact_match_over_catch_all(self, make_injector: InjectorFactory) -> None:
+        """An optional dependency is not in the registry as-is, so ranking decides: exact beats catch-all."""
+        services = ServiceCollection()
+
+        class Service[T]: ...
+
+        class Service1[T](Service[T]): ...
+
+        class Service2[T](Service[T]): ...
+
+        class Consumer:
+            def __init__(self, service: Service[int] | None) -> None:
+                self.service = service
+
+        services.add_singleton(Service[Any], Service1)
+        services.add_singleton(Service[int], Service2)
+        services.add_singleton(Consumer)
+
+        async with make_injector(services) as injector:
+            consumer = await injector.require(Consumer)
+
+        assert isinstance(consumer.service, Service2)
+
+    async def test_fail_ambiguous_match_in_dependency(self, make_injector: InjectorFactory) -> None:
+        """An ambiguous match surfaces when the request comes from a constructor parameter."""
+        services = ServiceCollection()
+
+        class Service[K, V]: ...
+
+        class Service1[K, V](Service[K, V]): ...
+
+        class Service2[K, V](Service[K, V]): ...
+
+        class Consumer:
+            def __init__(self, service: Service[str, str]) -> None:
+                self.service = service
+
+        services.add_singleton(Service[Any, str], Service1)
+        services.add_singleton(Service[str, Any], Service2)
+        services.add_singleton(Consumer)
+
+        async with make_injector(services) as injector:
+            with pytest.raises(AmbiguousServiceMatchError):
+                await injector.require(Consumer)
 
 
 class TestResolvers:

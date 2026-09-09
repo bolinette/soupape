@@ -9,6 +9,7 @@ from soupape import ServiceCollection, injectable
 from soupape._decorators._injectable import Injectable, InjectableContainer
 from soupape._resolvers import FunctionResolver
 from soupape.errors import (
+    AmbiguousServiceMatchError,
     IncompatibleInterfaceError,
     InvalidResolverReturnHintError,
     MissingInterfaceError,
@@ -142,6 +143,30 @@ class TestGetResolver:
 
         with pytest.raises(ServiceNotFoundError):
             services.get_resolver(Service)
+
+    def test_get_resolver_by_catch_all_match(self) -> None:
+        """`get_resolver` falls back to the single registration that matches the requested type."""
+        services = ServiceCollection()
+
+        class Service[T]: ...
+
+        services.add_scoped(Service[Any])
+
+        assert services.get_resolver(Service[int]).scope is InjectionScope.SCOPED
+
+    def test_fail_get_resolver_ambiguous_match(self) -> None:
+        """`get_resolver` fails when several registrations match the requested type equally well."""
+        services = ServiceCollection()
+
+        class Service[K, V]: ...
+
+        services.add_singleton(Service[Any, str])
+        services.add_singleton(Service[str, Any])
+
+        with pytest.raises(AmbiguousServiceMatchError) as exc_info:
+            services.get_resolver(Service[str, str])
+
+        assert exc_info.value.code == "soupape.service.ambiguous_match"
 
 
 class TestInjectableDecorator:

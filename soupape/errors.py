@@ -20,6 +20,14 @@ class ServiceNotFoundError(SoupapeError):
         )
 
 
+class AmbiguousServiceMatchError(SoupapeError):
+    def __init__(self, interface: str, matched: list[str]) -> None:
+        super().__init__(
+            "soupape.service.ambiguous_match",
+            f"More than one service for interface '{interface}' was found: {', '.join(matched)}",
+        )
+
+
 class MissingTypeHintError(SoupapeError):
     def __init__(self, parameter: str, fwrap: str) -> None:
         super().__init__(
