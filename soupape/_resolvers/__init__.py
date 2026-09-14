@@ -20,3 +20,4 @@ from soupape._resolvers._context import (
     ResolutionContextResolver as ResolutionContextResolver,
     CallerContextResolver as CallerContextResolver,
 )
+from soupape._resolvers._fallbacks import FallbackRunnerResolver as FallbackRunnerResolver

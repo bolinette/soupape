@@ -1,11 +1,12 @@
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, cast
 
 import pytest
 from peritype import FWrap, TWrap
 
 from soupape import AsyncInjector, ServiceCollection, SyncInjector
+from soupape.extension import FallbackResolver
 
 
 async def _resolved[T](result: T | Awaitable[T]) -> T:
@@ -33,8 +34,13 @@ class InjectorHarness:
     def is_async(self) -> bool:
         return self.injector.is_async
 
-    async def require[T](self, interface: type[T] | TWrap[T]) -> T:
-        return await _resolved(self.injector.require(interface))
+    async def require[T](
+        self,
+        interface: type[T] | TWrap[T],
+        *,
+        fallbacks: Iterable[FallbackResolver] | None = None,
+    ) -> T:
+        return await _resolved(self.injector.require(interface, fallbacks=fallbacks))
 
     async def call[T](
         self,
@@ -42,8 +48,16 @@ class InjectorHarness:
         *,
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        fallbacks: Iterable[FallbackResolver] | None = None,
     ) -> T:
-        return await _resolved(self.injector.call(callable, positional_args=positional_args, named_args=named_args))
+        return await _resolved(
+            self.injector.call(
+                callable,
+                positional_args=positional_args,
+                named_args=named_args,
+                fallbacks=fallbacks,
+            )
+        )
 
     def get_scoped_injector(self) -> "InjectorHarness":
         return InjectorHarness(self.injector.get_scoped_injector())

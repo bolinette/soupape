@@ -1,16 +1,17 @@
 import asyncio
 import inspect
-from collections.abc import AsyncGenerator, Callable, Coroutine, Generator
+from collections.abc import AsyncGenerator, Callable, Coroutine, Generator, Iterable, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from types import TracebackType
-from typing import Any, Self, cast, overload, override
+from typing import Any, Self, overload, override
 
-from peritype import FWrap, TWrap, wrap_func, wrap_type
+from peritype import FWrap, TWrap, wrap_type
 
 from soupape._collection import ServiceCollection
 from soupape._injector._base import BaseInjector, injector_w
 from soupape._instances import InstancePoolStack, PendingBuild
 from soupape._resolvers import DependencyTreeNode
+from soupape._traits import FallbackResolver
 from soupape._types import InjectionScope, Injector
 from soupape._utils import CircularGuard, CircularGuardKey
 from soupape.errors import CircularDependencyError
@@ -152,26 +153,33 @@ class AsyncInjector(BaseInjector, Injector):
         self._set_instance(node, resolved)
         return resolved  # type: ignore
 
-    @override
-    async def require[T](self, interface: type[T] | TWrap[T]) -> T:
-        if not isinstance(interface, TWrap):
-            twrap = wrap_type(interface)
-        else:
-            twrap = interface
-        return await self._require(twrap, CircularGuard())
-
     async def _resolve_depends_on_services(self, interface: TWrap[Any], circular_guard: CircularGuard) -> None:
         for dep_type in self._get_depends_on_services(interface):
-            await self._require(wrap_type(dep_type), circular_guard)
+            await self._require(wrap_type(dep_type), circular_guard, ())
 
     @override
-    async def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T:
+    async def require[T](
+        self,
+        interface: type[T] | TWrap[T],
+        *,
+        fallbacks: Iterable[FallbackResolver] | None = None,
+    ) -> T:
+        return await self._require_within(interface, CircularGuard(), () if fallbacks is None else (*fallbacks,))
+
+    @override
+    async def _require[T](
+        self,
+        interface: TWrap[T],
+        circular_guard: CircularGuard,
+        fallbacks: Sequence[FallbackResolver],
+    ) -> T:
         depends_on_guard = circular_guard.copy()
         depends_on_guard.enter_type(interface)
         await self._resolve_depends_on_services(interface, depends_on_guard)
-        resolver = self._get_service_resolver(interface)
+        resolver = self._get_service_resolver(interface, fallbacks)
         node = self._build_dependency_tree(
             resolver,
+            fallbacks,
             required=interface,
             origin=interface,
             caller_context=None,
@@ -188,6 +196,7 @@ class AsyncInjector(BaseInjector, Injector):
         *,
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        fallbacks: Iterable[FallbackResolver] | None = None,
     ) -> T: ...
     @overload
     async def call[**P, T](
@@ -196,6 +205,7 @@ class AsyncInjector(BaseInjector, Injector):
         *,
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        fallbacks: Iterable[FallbackResolver] | None = None,
     ) -> T: ...
     @overload
     async def call[**P, T](
@@ -204,6 +214,7 @@ class AsyncInjector(BaseInjector, Injector):
         *,
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        fallbacks: Iterable[FallbackResolver] | None = None,
     ) -> T: ...
     @overload
     async def call[**P, T](
@@ -212,6 +223,7 @@ class AsyncInjector(BaseInjector, Injector):
         *,
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        fallbacks: Iterable[FallbackResolver] | None = None,
     ) -> T: ...
     @override
     async def call(
@@ -220,26 +232,31 @@ class AsyncInjector(BaseInjector, Injector):
         *,
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        fallbacks: Iterable[FallbackResolver] | None = None,
     ) -> Any:
-        return await self._call_within(callable, positional_args or [], named_args or {}, None, CircularGuard())
+        return await self._call_within(
+            callable,
+            positional_args or [],
+            named_args or {},
+            None,
+            CircularGuard(),
+            () if fallbacks is None else (*fallbacks,),
+        )
 
     @override
-    async def _call_within(
+    async def _call(
         self,
-        callable: Callable[..., Any] | FWrap[..., Any],
+        fwrap: FWrap[..., Any],
         positional_args: list[Any],
         named_args: dict[str, Any],
         origin: TWrap[Any] | None,
         circular_guard: CircularGuard,
+        fallbacks: Sequence[FallbackResolver],
     ) -> Any:
-        if not isinstance(callable, FWrap):
-            fwrap = wrap_func(callable)
-        else:
-            fwrap = cast(FWrap[..., Any], callable)
-
         resolver = self._get_function_resolver(fwrap)
         node = self._build_dependency_tree(
             resolver,
+            fallbacks,
             required=None,
             origin=origin,
             caller_context=None,

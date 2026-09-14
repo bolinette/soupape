@@ -1,9 +1,9 @@
 import inspect
 from abc import abstractmethod
-from collections.abc import Awaitable, Callable, Iterable, Mapping
-from typing import Any, Self, override
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from typing import Any, Self, cast, override
 
-from peritype import FWrap, TWrap, wrap_type
+from peritype import FWrap, TWrap, wrap_func, wrap_type
 
 from soupape._collection import ServiceCollection
 from soupape._decorators import get_custom_resolver
@@ -14,6 +14,7 @@ from soupape._resolvers import (
     DependencyTreeNode,
     DictResolver,
     DirectInstanceResolver,
+    FallbackRunnerResolver,
     FunctionResolver,
     InstantiatedResolver,
     ListResolver,
@@ -22,14 +23,13 @@ from soupape._resolvers import (
     ServiceResolver,
     WrappedTypeResolver,
 )
-from soupape._traits import get_annotated_resolver
+from soupape._traits import FallbackResolver, get_annotated_resolver
 from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
 from soupape._utils import Absent, CircularGuard, ResolverCache, accumulate_meta_on_twrap
 from soupape.errors import (
     CaptiveDependencyError,
     MissingTypeHintError,
     ScopedServiceNotAvailableError,
-    ServiceNotFoundError,
     UnresolvedAnyTypeError,
 )
 
@@ -62,7 +62,10 @@ class BaseInjector(Injector):
         if self.is_root_injector:
             self._instance_pool.set_instance(service_collection_w, self.services)
 
-    def _get_context(self, node: DependencyTreeNode[..., Any]) -> InjectionContext:
+    def _get_context(
+        self,
+        node: DependencyTreeNode[..., Any],
+    ) -> InjectionContext:
         if node.context is None:
             node.context = InjectionContext(
                 injector=self,
@@ -80,45 +83,16 @@ class BaseInjector(Injector):
     def is_root_injector(self) -> bool:
         return len(self._instance_pool) == 1
 
-    @abstractmethod
-    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
-
-    @abstractmethod
-    def call[T](
-        self,
-        callable: Callable[..., T] | FWrap[..., T],
-        *,
-        positional_args: list[Any] | None = None,
-        named_args: dict[str, Any] | None = None,
-    ) -> T | Awaitable[T]: ...
-
-    @abstractmethod
-    def _require[T](self, interface: TWrap[T], circular_guard: CircularGuard) -> T | Awaitable[T]: ...
-
-    @abstractmethod
-    def _call_within(
-        self,
-        callable: Callable[..., Any] | FWrap[..., Any],
-        positional_args: list[Any],
-        named_args: dict[str, Any],
-        origin: TWrap[Any] | None,
-        circular_guard: CircularGuard,
-    ) -> Any: ...
-
-    def _require_within(self, interface: type[Any] | TWrap[Any], circular_guard: CircularGuard) -> Any:
-        twrap = interface if isinstance(interface, TWrap) else wrap_type(interface)
-        return self._require(twrap, circular_guard)
-
     def _enter_circular_guard(
         self,
         circular_guard: CircularGuard,
         required: TWrap[Any] | None,
         resolver: ServiceResolver[..., Any],
     ) -> None:
-        if required is not None:
-            circular_guard.enter_type(required)
-        else:
+        if required is None:
             circular_guard.enter(resolver.get_instance_function())
+        elif not isinstance(resolver, FallbackRunnerResolver):
+            circular_guard.enter_type(required)
 
     def _get_generator_owner(self, node: DependencyTreeNode[..., Any]) -> Self:
         if node.singleton_owner is not None:
@@ -171,6 +145,7 @@ class BaseInjector(Injector):
     def _get_service_resolver(
         self,
         interface: TWrap[Any],
+        fallbacks: Sequence[FallbackResolver],
         *,
         scope: InjectionScope = InjectionScope.IMMEDIATE,
         caller_context: CallerContext | None = None,
@@ -184,10 +159,19 @@ class BaseInjector(Injector):
         if self._has_instance(interface):
             return self._make_instantiated_resolver(interface)
         if caller_context is not None and caller_context.has_default_value:
-            return DirectInstanceResolver(caller_context.default_value)
+            return self._with_fallbacks(fallbacks, DirectInstanceResolver(caller_context.default_value))
         if interface.nullable:
-            return DirectInstanceResolver(None)
-        raise ServiceNotFoundError(str(interface))
+            return self._with_fallbacks(fallbacks, DirectInstanceResolver(None))
+        return FallbackRunnerResolver(fallbacks)
+
+    def _with_fallbacks(
+        self,
+        fallbacks: Sequence[FallbackResolver],
+        fallthrough: ServiceResolver[..., Any],
+    ) -> ServiceResolver[..., Any]:
+        if not fallbacks:
+            return fallthrough
+        return FallbackRunnerResolver(fallbacks, fallthrough)
 
     def _get_function_resolver(self, fwrap: FWrap[..., Any]) -> ServiceResolver[..., Any]:
         if (resolv_meta := get_custom_resolver(fwrap, self._cache)) is not None:
@@ -202,6 +186,7 @@ class BaseInjector(Injector):
     def _build_dependency_tree(
         self,
         resolver: ServiceResolver[..., Any],
+        fallbacks: Sequence[FallbackResolver],
         *,
         required: TWrap[Any] | None,
         origin: TWrap[Any] | None,
@@ -257,7 +242,12 @@ class BaseInjector(Injector):
                 hint_resolver = hint
                 hint = hint_resolver.required
             else:
-                hint_resolver = self._get_service_resolver(hint, scope=resolver.scope, caller_context=caller_context)
+                hint_resolver = self._get_service_resolver(
+                    hint,
+                    scope=resolver.scope,
+                    caller_context=caller_context,
+                    fallbacks=fallbacks,
+                )
 
             if (
                 singleton_owner is not None
@@ -271,6 +261,7 @@ class BaseInjector(Injector):
 
             child = self._build_dependency_tree(
                 hint_resolver,
+                (),
                 required=hint,
                 origin=hint if hint is not None else origin,
                 caller_context=caller_context,
@@ -308,6 +299,64 @@ class BaseInjector(Injector):
 
     def _get_depends_on_services(self, interface: TWrap[Any]) -> Iterable[type[Any]]:
         return accumulate_meta_on_twrap(interface, ServiceDependencyMetadata.KEY, lambda: [])
+
+    @abstractmethod
+    def require[T](
+        self,
+        interface: type[T] | TWrap[T],
+        *,
+        fallbacks: Iterable[FallbackResolver] | None = None,
+    ) -> T | Awaitable[T]: ...
+
+    @abstractmethod
+    def call[T](
+        self,
+        callable: Callable[..., T] | FWrap[..., T],
+        *,
+        positional_args: list[Any] | None = None,
+        named_args: dict[str, Any] | None = None,
+        fallbacks: Iterable[FallbackResolver] | None = None,
+    ) -> T | Awaitable[T]: ...
+
+    @abstractmethod
+    def _require[T](
+        self,
+        interface: TWrap[T],
+        circular_guard: CircularGuard,
+        fallbacks: Sequence[FallbackResolver],
+    ) -> T | Awaitable[T]: ...
+
+    @abstractmethod
+    def _call(
+        self,
+        fwrap: FWrap[..., Any],
+        positional_args: list[Any],
+        named_args: dict[str, Any],
+        origin: TWrap[Any] | None,
+        circular_guard: CircularGuard,
+        fallbacks: Sequence[FallbackResolver],
+    ) -> Any: ...
+
+    def _require_within(
+        self,
+        interface: type[Any] | TWrap[Any],
+        circular_guard: CircularGuard,
+        fallbacks: Sequence[FallbackResolver],
+    ) -> Any:
+        twrap = interface if isinstance(interface, TWrap) else wrap_type(interface)
+        return self._require(twrap, circular_guard, fallbacks)
+
+    def _call_within(
+        self,
+        callable: Callable[..., Any] | FWrap[..., Any],
+        positional_args: list[Any],
+        named_args: dict[str, Any],
+        origin: TWrap[Any] | None,
+        circular_guard: CircularGuard,
+        fallbacks: Sequence[FallbackResolver],
+    ) -> Any:
+        fwrap = cast(FWrap[..., Any], callable) if isinstance(callable, FWrap) else wrap_func(callable)
+        return self._call(fwrap, positional_args, named_args, origin, circular_guard, fallbacks)
 
 
 service_collection_w = wrap_type(ServiceCollection)

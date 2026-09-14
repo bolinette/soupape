@@ -7,7 +7,7 @@ fixture defined in `conftest.py`. Behaviour that only one injector can exhibit l
 
 import inspect
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Generator, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Generator, Iterator, Sequence
 from types import TracebackType
 from typing import Annotated, Any, override
 
@@ -101,6 +101,19 @@ class TestBasicInjection:
             service = await injector.require(TestService)
 
         assert service.greet() == "Hello, World!"
+
+    async def test_require_wrapped_type(self, make_injector: InjectorFactory) -> None:
+        """`require` accepts an already wrapped type and resolves the same service."""
+        services = ServiceCollection()
+
+        class TestService:
+            pass
+
+        services.add_singleton(TestService)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(wrap_type(TestService))
+            assert service is await injector.require(TestService)
 
     async def test_simple_injection_in_service(self, make_injector: InjectorFactory) -> None:
         """Injects a singleton into another service's constructor."""
@@ -1556,6 +1569,24 @@ class TestFunctionCalls:
                 return dep_service.get_value()
 
             result = await injector.call(test_function)
+
+        assert result == "Injected Value"
+
+    async def test_call_wrapped_function(self, make_injector: InjectorFactory) -> None:
+        """`call` accepts an already wrapped function and injects its parameters."""
+        services = ServiceCollection()
+
+        class DependencyService:
+            def get_value(self) -> str:
+                return "Injected Value"
+
+        services.add_singleton(DependencyService)
+
+        def test_function(dep_service: DependencyService) -> str:
+            return dep_service.get_value()
+
+        async with make_injector(services) as injector:
+            result = await injector.call(wrap_func(test_function))
 
         assert result == "Injected Value"
 
@@ -3083,6 +3114,329 @@ class TestCustomResolvers:
         """`resolver` rejects a call that names neither a resolvable nor a resolver."""
         with pytest.raises(TypeError, match="Unknown parameters"):
             resolver()  # pyright: ignore[reportCallIssue]
+
+
+class TestFallbackResolver:
+    async def test_fallback_resolver_called_on_service(self, make_injector: InjectorFactory) -> None:
+        """The provided fallback resolvers are called when no other is found."""
+
+        class Service:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+        class ParamDatabase:
+            def __init__(self) -> None:
+                self.params = {"value": "test"}
+
+        class ParamResolver:
+            def __init__(self, params: set[str]) -> None:
+                self.params = params
+
+            def supports(self, context: ResolutionContext) -> bool:
+                return context.caller_context is not None and context.caller_context.param_name in self.params
+
+            def resolve(self, db: ParamDatabase) -> Any:
+                return db.params["value"]
+
+        services = ServiceCollection()
+        services.add_singleton(ParamDatabase)
+        services.add_scoped(Service)
+
+        async with make_injector(services) as injector:
+            db = await injector.require(ParamDatabase)
+            params = set(db.params)
+            async with injector.get_scoped_injector() as scoped_injector:
+                service = await scoped_injector.require(Service, fallbacks=[ParamResolver(params)])
+                assert service.value == "test"
+
+    async def test_fallback_resolver_called_on_func_call(self, make_injector: InjectorFactory) -> None:
+        """The provided fallback resolvers are called when no other is found."""
+
+        def test_func(value: str) -> str:
+            return value
+
+        class ParamDatabase:
+            def __init__(self) -> None:
+                self.params = {"value": "test"}
+
+        class ParamResolver:
+            def __init__(self, params: set[str]) -> None:
+                self.params = params
+
+            def supports(self, context: ResolutionContext) -> bool:
+                return context.caller_context is not None and context.caller_context.param_name in self.params
+
+            def resolve(self, db: ParamDatabase) -> Any:
+                return db.params["value"]
+
+        services = ServiceCollection()
+        services.add_singleton(ParamDatabase)
+
+        async with make_injector(services) as injector:
+            db = await injector.require(ParamDatabase)
+            params = set(db.params)
+
+            result = await injector.call(test_func, fallbacks=[ParamResolver(params)])
+            assert result == "test"
+
+    async def test_fallback_resolver_param_of_same_type_is_not_a_cycle(self, make_injector: InjectorFactory) -> None:
+        """A fallback whose `resolve` takes a parameter of the type it resolves is not mistaken for a cycle."""
+
+        class Service:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+        class PrefixResolver:
+            def supports(self, context: ResolutionContext) -> bool:
+                return context.caller_context is not None and context.caller_context.param_name == "value"
+
+            def resolve(self, prefix: str = "pre") -> str:
+                return prefix + "fix"
+
+        services = ServiceCollection()
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service, fallbacks=[PrefixResolver()])
+            assert service.value == "prefix"
+
+    async def test_fallback_resolvers_from_one_shot_iterable(self, make_injector: InjectorFactory) -> None:
+        """A generator of fallbacks serves every unresolved parameter, not only the first one."""
+
+        class Service:
+            def __init__(self, first: str, second: str) -> None:
+                self.first = first
+                self.second = second
+
+        class ParamResolver:
+            def supports(self, context: ResolutionContext) -> bool:
+                return context.caller_context is not None
+
+            def resolve(self, caller_context: CallerContext) -> str:
+                return caller_context.param_name
+
+        services = ServiceCollection()
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service, fallbacks=(r for r in [ParamResolver()]))
+            assert service.first == "first"
+            assert service.second == "second"
+
+    async def test_first_supporting_fallback_resolver_wins(self, make_injector: InjectorFactory) -> None:
+        """Fallbacks are tried in order and the first one that supports the parameter is used."""
+
+        class Service:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+        class ValueResolver:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+            def supports(self, context: ResolutionContext) -> bool:
+                return context.caller_context is not None and context.caller_context.param_name == "value"
+
+            def resolve(self) -> str:
+                return self.value
+
+        services = ServiceCollection()
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service, fallbacks=[ValueResolver("first"), ValueResolver("second")])
+            assert service.value == "first"
+
+    async def test_fallback_resolver_wins_over_default_value(self, make_injector: InjectorFactory) -> None:
+        """A supporting fallback overrides a parameter default; a declining one lets the default through."""
+
+        class Service:
+            def __init__(self, first: str = "default", second: str = "default") -> None:
+                self.first = first
+                self.second = second
+
+        class FirstResolver:
+            def supports(self, context: ResolutionContext) -> bool:
+                return context.caller_context is not None and context.caller_context.param_name == "first"
+
+            def resolve(self) -> str:
+                return "fallback"
+
+        services = ServiceCollection()
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service, fallbacks=[FirstResolver()])
+            assert service.first == "fallback"
+            assert service.second == "default"
+
+    async def test_fallback_resolver_wins_over_optional(self, make_injector: InjectorFactory) -> None:
+        """A supporting fallback fills an optional parameter; a declining one leaves it `None`."""
+
+        class Service:
+            def __init__(self, first: str | None, second: str | None) -> None:
+                self.first = first
+                self.second = second
+
+        class FirstResolver:
+            def supports(self, context: ResolutionContext) -> bool:
+                return context.caller_context is not None and context.caller_context.param_name == "first"
+
+            def resolve(self) -> str:
+                return "fallback"
+
+        services = ServiceCollection()
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service, fallbacks=[FirstResolver()])
+            assert service.first == "fallback"
+            assert service.second is None
+
+    async def test_default_value_without_fallbacks_is_unchanged(self, make_injector: InjectorFactory) -> None:
+        """Without fallbacks, defaulted and optional parameters resolve as before."""
+
+        class Service:
+            def __init__(self, first: str = "default", second: str | None = None) -> None:
+                self.first = first
+                self.second = second
+
+        services = ServiceCollection()
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service)
+            assert service.first == "default"
+            assert service.second is None
+
+    async def test_fallback_resolvers_forwarded_through_context(self, make_injector: InjectorFactory) -> None:
+        """A resolver forwards its own fallbacks through `context.require` and `context.call`."""
+
+        class Value:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+        class ParamResolver:
+            def supports(self, context: ResolutionContext) -> bool:
+                return context.caller_context is not None and context.caller_context.param_name == "value"
+
+            def resolve(self) -> str:
+                return "from fallback"
+
+        def make_value(value: str) -> Value:
+            return Value(value.upper())
+
+        class RequiringMarker:
+            def __resolve__(self, context: ResolutionContext) -> Value | Awaitable[Value]:
+                return context.require(Value, fallbacks=[ParamResolver()])
+
+        class CallingMarker:
+            def __resolve__(self, context: ResolutionContext) -> Value | Awaitable[Value]:
+                return context.call(make_value, fallbacks=[ParamResolver()])
+
+        class Service:
+            def __init__(
+                self,
+                required: Annotated[Value, RequiringMarker()],
+                called: Annotated[Value, CallingMarker()],
+            ) -> None:
+                self.required = required
+                self.called = called
+
+        services = ServiceCollection()
+        services.add_transient(Value)
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service)
+            assert service.required.value == "from fallback"
+            assert service.called.value == "FROM FALLBACK"
+
+    async def test_fallback_resolver_is_not_applied_below_the_required_service(
+        self, make_injector: InjectorFactory
+    ) -> None:
+        """Fallbacks serve the required service's own parameters, never those of its dependencies."""
+
+        class Nested:
+            def __init__(self, nested_value: str) -> None:
+                self.nested_value = nested_value
+
+        class Service:
+            def __init__(self, value: str, nested: Nested) -> None:
+                self.value = value
+                self.nested = nested
+
+        supported: list[str] = []
+
+        class ParamResolver:
+            def supports(self, context: ResolutionContext) -> bool:
+                if context.caller_context is None:
+                    return False
+                supported.append(context.caller_context.param_name)
+                return True
+
+            def resolve(self) -> str:
+                return "from fallback"
+
+        services = ServiceCollection()
+        services.add_transient(Nested)
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            with pytest.raises(ServiceNotFoundError):
+                await injector.require(Service, fallbacks=[ParamResolver()])
+
+        assert "value" in supported
+        assert "nested_value" not in supported
+
+    async def test_registered_service_wins_over_fallback_resolver(self, make_injector: InjectorFactory) -> None:
+        """A registered service is resolved by its registration, even when a fallback supports the parameter."""
+
+        class Value:
+            def __init__(self) -> None:
+                self.origin = "registered"
+
+        class Service:
+            def __init__(self, value: Value) -> None:
+                self.value = value
+
+        class ValueResolver:
+            def supports(self, context: ResolutionContext) -> bool:
+                return True
+
+            def resolve(self) -> Value:
+                value = Value()
+                value.origin = "fallback"
+                return value
+
+        services = ServiceCollection()
+        services.add_transient(Value)
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            service = await injector.require(Service, fallbacks=[ValueResolver()])
+            assert service.value.origin == "registered"
+
+    async def test_fallback_resolver_not_supporting_the_parameter_fails(self, make_injector: InjectorFactory) -> None:
+        """A fallback that supports nothing leaves the parameter unresolved."""
+
+        class Service:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+        class NeverResolver:
+            def supports(self, context: ResolutionContext) -> bool:
+                return False
+
+            def resolve(self) -> str:
+                return "never"
+
+        services = ServiceCollection()
+        services.add_transient(Service)
+
+        async with make_injector(services) as injector:
+            with pytest.raises(ServiceNotFoundError):
+                await injector.require(Service, fallbacks=[NeverResolver()])
 
 
 class TaggingResolver(ServiceResolver[..., Any]):

@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Coroutine, Generator, Iterable
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Coroutine, Generator, Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto, unique
 from types import TracebackType
@@ -12,6 +12,7 @@ from soupape._utils import Absent, CircularGuard
 if TYPE_CHECKING:
     from soupape import ServiceCollection
     from soupape._resolvers import DependencyTreeNode
+    from soupape._traits import FallbackResolver
 
 type ResolutionFunction[**P, T] = Callable[
     P,
@@ -39,7 +40,12 @@ class Injector(Protocol):
 
 
 class ResolvingInjector(Injector, Protocol):
-    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]: ...
+    def require[T](
+        self,
+        interface: type[T] | TWrap[T],
+        *,
+        fallbacks: "Iterable[FallbackResolver] | None" = None,
+    ) -> T | Awaitable[T]: ...
 
     def call[T](
         self,
@@ -47,12 +53,21 @@ class ResolvingInjector(Injector, Protocol):
         *,
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        fallbacks: "Iterable[FallbackResolver] | None" = None,
     ) -> T | Awaitable[T]: ...
 
 
-type RequireWithin = Callable[[type[Any] | TWrap[Any], CircularGuard], Any]
+type RequireWithin = Callable[[type[Any] | TWrap[Any], CircularGuard, Sequence[FallbackResolver]], Any]
 type CallWithin = Callable[
-    [Callable[..., Any] | FWrap[..., Any], list[Any], dict[str, Any], TWrap[Any] | None, CircularGuard], Any
+    [
+        Callable[..., Any] | FWrap[..., Any],
+        list[Any],
+        dict[str, Any],
+        TWrap[Any] | None,
+        CircularGuard,
+        Sequence[FallbackResolver],
+    ],
+    Any,
 ]
 
 
@@ -92,16 +107,28 @@ class ResolutionContext:
             caller_context=self.caller_context,
         )
 
-    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]:
-        return self.injector.require(interface)
+    def require[T](
+        self,
+        interface: type[T] | TWrap[T],
+        *,
+        fallbacks: "Iterable[FallbackResolver] | None" = None,
+    ) -> T | Awaitable[T]:
+        return self.injector.require(interface, fallbacks=fallbacks)
 
     def call[T](
         self,
         callable: Callable[..., T] | FWrap[..., T],
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        *,
+        fallbacks: "Iterable[FallbackResolver] | None" = None,
     ) -> T | Awaitable[T]:
-        return self.injector.call(callable, positional_args=positional_args, named_args=named_args)
+        return self.injector.call(
+            callable,
+            positional_args=positional_args,
+            named_args=named_args,
+            fallbacks=fallbacks,
+        )
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
@@ -111,8 +138,17 @@ class InjectionContext(ResolutionContext):
     call_within: CallWithin
 
     @override
-    def require[T](self, interface: type[T] | TWrap[T]) -> T | Awaitable[T]:
-        return self.require_within(interface, CircularGuard.from_trace(self.node.trace))
+    def require[T](
+        self,
+        interface: type[T] | TWrap[T],
+        *,
+        fallbacks: "Iterable[FallbackResolver] | None" = None,
+    ) -> T | Awaitable[T]:
+        return self.require_within(
+            interface,
+            CircularGuard.from_trace(self.node.trace),
+            () if fallbacks is None else (*fallbacks,),
+        )
 
     @override
     def call[T](
@@ -120,9 +156,16 @@ class InjectionContext(ResolutionContext):
         callable: Callable[..., T] | FWrap[..., T],
         positional_args: list[Any] | None = None,
         named_args: dict[str, Any] | None = None,
+        *,
+        fallbacks: "Iterable[FallbackResolver] | None" = None,
     ) -> T | Awaitable[T]:
         return self.call_within(
-            callable, positional_args or [], named_args or {}, self.origin, CircularGuard.from_trace(self.node.trace)
+            callable,
+            positional_args or [],
+            named_args or {},
+            self.origin,
+            CircularGuard.from_trace(self.node.trace),
+            () if fallbacks is None else (*fallbacks,),
         )
 
     def parent_frame(self) -> ResolutionContext:
