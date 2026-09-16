@@ -1,5 +1,4 @@
-import itertools
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, TypeGuard, get_origin
 
 from hafersack import Hafersack
@@ -106,17 +105,6 @@ def get_meta_on_fwrap[**P, T](
     if meta.has(func.func, key):
         return meta.get(func.func, key)
     return default
-
-
-def accumulate_meta_on_twrap[T](interface: TWrap[Any], key: str, factory: Callable[[], Iterable[T]]) -> Iterable[T]:
-    meta_list = factory()
-    if meta.has(interface.origin, key):
-        deps_meta: Iterable[T] = meta.get(interface.origin, key)
-        meta_list = itertools.chain(meta_list, deps_meta)
-    if (interface_origin := get_origin(interface.origin)) is not None and meta.has(interface_origin, key):
-        deps_meta: Iterable[T] = meta.get(interface_origin, key)
-        meta_list = itertools.chain(meta_list, deps_meta)
-    return meta_list
 
 
 meta = Hafersack("__soupape__")

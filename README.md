@@ -91,7 +91,6 @@ The same registrations run on a `SyncInjector`, as long as no service requires a
 - **Generic services** — generic services are registered and resolved by specialization.
   `Repository[User]` and `Repository[Order]` are two different services.
 - **Registration helpers** — the `@injectable` decorators will register your services from a cache.
-  `depends_on` declares a service that must be resolved first, typically one that registers other services.
 - **Errors** — every failure raises a `SoupapeError` with its own error code.
   Unknown services, missing type hints, captive dependencies and circular dependencies are all detected before any instance is created.
 

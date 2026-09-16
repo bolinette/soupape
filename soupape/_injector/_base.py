@@ -7,7 +7,6 @@ from peritype import FWrap, TWrap, wrap_func, wrap_type
 
 from soupape._collection import ServiceCollection
 from soupape._decorators import get_custom_resolver
-from soupape._decorators._depends_on import ServiceDependencyMetadata
 from soupape._instances import InstancePoolStack
 from soupape._resolvers import (
     CallerContextResolver,
@@ -25,7 +24,7 @@ from soupape._resolvers import (
 )
 from soupape._traits import FallbackResolver, get_annotated_resolver
 from soupape._types import CallerContext, InjectionContext, InjectionScope, Injector
-from soupape._utils import Absent, CircularGuard, ResolverCache, accumulate_meta_on_twrap
+from soupape._utils import Absent, CircularGuard, ResolverCache
 from soupape.errors import (
     CaptiveDependencyError,
     MissingTypeHintError,
@@ -296,9 +295,6 @@ class BaseInjector(Injector):
                 raise TypeError(f"'{resolver.name}' got positional-only argument '{name}' passed by name")
             elif name in positional_names:
                 raise TypeError(f"'{resolver.name}' got multiple values for argument '{name}'")
-
-    def _get_depends_on_services(self, interface: TWrap[Any]) -> Iterable[type[Any]]:
-        return accumulate_meta_on_twrap(interface, ServiceDependencyMetadata.KEY, lambda: [])
 
     @abstractmethod
     def require[T](

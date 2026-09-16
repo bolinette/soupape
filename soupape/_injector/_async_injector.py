@@ -153,10 +153,6 @@ class AsyncInjector(BaseInjector, Injector):
         self._set_instance(node, resolved)
         return resolved  # type: ignore
 
-    async def _resolve_depends_on_services(self, interface: TWrap[Any], circular_guard: CircularGuard) -> None:
-        for dep_type in self._get_depends_on_services(interface):
-            await self._require(wrap_type(dep_type), circular_guard, ())
-
     @override
     async def require[T](
         self,
@@ -173,9 +169,6 @@ class AsyncInjector(BaseInjector, Injector):
         circular_guard: CircularGuard,
         fallbacks: Sequence[FallbackResolver],
     ) -> T:
-        depends_on_guard = circular_guard.copy()
-        depends_on_guard.enter_type(interface)
-        await self._resolve_depends_on_services(interface, depends_on_guard)
         resolver = self._get_service_resolver(interface, fallbacks)
         node = self._build_dependency_tree(
             resolver,
