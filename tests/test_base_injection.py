@@ -3383,6 +3383,28 @@ class TestAnnotatedResolvers:
             s2 = await injector.require(Service2)
             assert s2.s1.value == 42
 
+    async def test_bare_marker_class_is_not_a_resolver(self, make_injector: InjectorFactory) -> None:
+        """Annotating with the marker class itself, not an instance, leaves the parameter to normal resolution."""
+        services = ServiceCollection()
+
+        class Service1:
+            pass
+
+        class Service1Resolver:
+            def __resolve__(self) -> Service1:
+                raise AssertionError("should not be called")
+
+        class Service2:
+            def __init__(self, s1: Annotated[Service1, Service1Resolver]) -> None:
+                self.s1 = s1
+
+        services.add_singleton(Service1)
+        services.add_singleton(Service2)
+
+        async with make_injector(services) as injector:
+            s2 = await injector.require(Service2)
+            assert s2.s1 is await injector.require(Service1)
+
     async def test_annotated_resolver_from_function(self, make_injector: InjectorFactory) -> None:
         """An `Annotated` marker with `__resolve__` builds a called function's parameter."""
         services = ServiceCollection()

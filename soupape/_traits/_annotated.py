@@ -14,7 +14,7 @@ class AnnotatedResolutionFunction(Protocol):
 
 def _find_annotated_resolution_function(hint: TWrap[Any]) -> AnnotatedResolutionFunction | None:
     for anno in hint.annotations:
-        if isinstance(anno, AnnotatedResolutionFunction):
+        if not isinstance(anno, type) and isinstance(anno, AnnotatedResolutionFunction):
             return anno
     return None
 
