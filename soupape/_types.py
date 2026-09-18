@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, 
 from dataclasses import dataclass, field
 from enum import Enum, auto, unique
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Never, Protocol, override, runtime_checkable
+from typing import TYPE_CHECKING, Any, Never, Protocol, Self, override, runtime_checkable
 
 from peritype import FWrap, TWrap
 
@@ -183,7 +183,7 @@ class InjectionContext(ResolutionContext):
 
 @runtime_checkable
 class SyncContextManager(Protocol):
-    def __enter__(self) -> "SyncContextManager": ...
+    def __enter__(self) -> Self: ...
 
     def __exit__(
         self,
@@ -195,7 +195,7 @@ class SyncContextManager(Protocol):
 
 @runtime_checkable
 class AsyncContextManager(Protocol):
-    async def __aenter__(self) -> "AsyncContextManager": ...
+    async def __aenter__(self) -> Self: ...
 
     async def __aexit__(
         self,

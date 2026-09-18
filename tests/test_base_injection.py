@@ -9,7 +9,7 @@ import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Generator, Iterator, Sequence
 from types import TracebackType
-from typing import Annotated, Any, override
+from typing import Annotated, Any, Self, override
 
 import pytest
 from conftest import InjectorFactory
@@ -447,10 +447,12 @@ class TestGenericInjection:
             def fetch_data(self) -> str: ...
 
         class Service1[T](BaseService[T]):
+            @override
             def fetch_data(self) -> str:
                 return "Service1 Data"
 
         class Service2[T](BaseService[T]):
+            @override
             def fetch_data(self) -> str:
                 return "Service2 Data"
 
@@ -524,10 +526,12 @@ class TestInterfaceRegistration:
             def fetch_data(self) -> str: ...
 
         class Service1[T](Service[T]):
+            @override
             def fetch_data(self) -> str:
                 return "Service1 Data"
 
         class Service2[T](Service[T]):
+            @override
             def fetch_data(self) -> str:
                 return "Service2 Data"
 
@@ -549,14 +553,17 @@ class TestInterfaceRegistration:
             def fetch_data(self) -> str: ...
 
         class Service1[T, U](Service[T, U]):
+            @override
             def fetch_data(self) -> str:
                 return "Service1 Data"
 
         class Service2[T, U](Service[T, U]):
+            @override
             def fetch_data(self) -> str:
                 return "Service2 Data"
 
         class Service3[T, U](Service[T, U]):
+            @override
             def fetch_data(self) -> str:
                 return "Service3 Data"
 
@@ -1838,7 +1845,7 @@ class TestGeneratorResolverTeardown:
 
         services.add_scoped(service_resolver)
 
-        with pytest.raises(ValueError, match="boom"):
+        with pytest.raises(ValueError, match="boom"):  # noqa: PT012  the raise must happen inside the scope
             async with make_injector(services).get_scoped_injector() as injector:
                 await injector.require(Service)
                 raise ValueError("boom")
@@ -1854,12 +1861,12 @@ class TestContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            def __enter__(self) -> "Resource":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -1882,12 +1889,12 @@ class TestContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            def __enter__(self) -> "Resource":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -1940,12 +1947,12 @@ class TestContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            def __enter__(self) -> "Resource":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -1971,12 +1978,12 @@ class TestContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            def __enter__(self) -> "Connection":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -2004,12 +2011,12 @@ class TestContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            def __enter__(self) -> "Connection":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -2041,12 +2048,12 @@ class TestContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            def __enter__(self) -> "Connection":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -2075,12 +2082,12 @@ class TestContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            def __enter__(self) -> "Connection":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -2105,24 +2112,24 @@ class TestContextManagerServices:
         events: list[str] = []
 
         class Database:
-            def __enter__(self) -> "Database":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
                 events.append("database")
 
         class Cache:
-            def __enter__(self) -> "Cache":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -2133,12 +2140,12 @@ class TestContextManagerServices:
                 self.database = database
                 self.cache = cache
 
-            def __enter__(self) -> "Repository":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -2161,12 +2168,12 @@ class TestContextManagerServices:
         events: list[str] = []
 
         class Database:
-            def __enter__(self) -> "Database":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -2176,12 +2183,12 @@ class TestContextManagerServices:
             def __init__(self, database: Database) -> None:
                 self.database = database
 
-            def __enter__(self) -> "Repository":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -2203,7 +2210,7 @@ class TestContextManagerServices:
         received: list[type[BaseException] | None] = []
 
         class Resource:
-            def __enter__(self) -> "Resource":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
@@ -2216,7 +2223,7 @@ class TestContextManagerServices:
 
         services.add_scoped(Resource)
 
-        with pytest.raises(ValueError, match="boom"):
+        with pytest.raises(ValueError, match="boom"):  # noqa: PT012  the raise must happen inside the scope
             async with make_injector(services).get_scoped_injector() as injector:
                 await injector.require(Resource)
                 raise ValueError("boom")

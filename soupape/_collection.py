@@ -71,15 +71,13 @@ class ServiceCollection:
         if inspect.isasyncgenfunction(original):
             if hint.match(AsyncGenerator[Any, Any] | AsyncIterator[Any] | AsyncIterable[Any]):
                 return hint.generic_params[0]
-            else:
-                raise InvalidResolverReturnHintError(
-                    str(func), ("AsyncGenerator[T]", "AsyncIterator[T]", "AsyncIterable[T]")
-                )
-        elif inspect.isgeneratorfunction(original):
+            raise InvalidResolverReturnHintError(
+                str(func), ("AsyncGenerator[T]", "AsyncIterator[T]", "AsyncIterable[T]")
+            )
+        if inspect.isgeneratorfunction(original):
             if hint.match(Generator[Any, Any, Any] | Iterator[Any] | Iterable[Any]):
                 return hint.generic_params[0]
-            else:
-                raise InvalidResolverReturnHintError(str(func), ("Generator[T]", "Iterator[T]", "Iterable[T]"))
+            raise InvalidResolverReturnHintError(str(func), ("Generator[T]", "Iterator[T]", "Iterable[T]"))
         return hint
 
     def _unpack_registration_args(
@@ -128,7 +126,8 @@ class ServiceCollection:
                 implementation_w = func_resolver_return or interface_w
             resolver = FunctionResolver(scope, fwrap, required=interface_w, registered=implementation_w)
         else:
-            assert implementation is not None and interface is not None
+            assert implementation is not None
+            assert interface is not None
             interface_w = wrap_type(interface)
             implementation_w = wrap_type(implementation)
             resolver = DefaultResolver(scope, interface_w, implementation_w)

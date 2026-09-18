@@ -72,8 +72,7 @@ class SyncInjector(BaseInjector, Injector):
         named_args: dict[str, Any] | None = None,
     ) -> T:
         resolved_args: list[Any] = list(positional_args or [])
-        for arg in node.args:
-            resolved_args.append(self._resolve_service(arg))
+        resolved_args.extend(self._resolve_service(arg) for arg in node.args)
 
         resolved_kwargs: dict[str, Any] = dict(named_args or {})
         for kwarg_name, kwarg in node.kwargs.items():
@@ -90,7 +89,7 @@ class SyncInjector(BaseInjector, Injector):
             raise AsyncInSyncInjectorError(resolved)
 
         self._set_instance(node, resolved)
-        return resolved  # type: ignore
+        return resolved  # pyright: ignore[reportReturnType]
 
     @override
     def require[T](

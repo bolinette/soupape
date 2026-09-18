@@ -11,6 +11,7 @@ import asyncio
 import warnings
 from collections.abc import AsyncGenerator
 from types import TracebackType
+from typing import Self
 
 import pytest
 
@@ -48,9 +49,8 @@ class TestFailAsyncInSyncInjector:
 
         services.add_singleton(async_service_resolver)
 
-        with SyncInjector(services) as injector:
-            with pytest.raises(AsyncInSyncInjectorError):
-                injector.require(AsyncService)
+        with SyncInjector(services) as injector, pytest.raises(AsyncInSyncInjectorError):
+            injector.require(AsyncService)
 
     def test_fail_call_async_function(self) -> None:
         """`call` on a coroutine function fails."""
@@ -86,9 +86,8 @@ class TestFailAsyncInSyncInjector:
 
         services.add_singleton(TestService)
 
-        with SyncInjector(services) as injector:
-            with pytest.raises(AsyncInSyncInjectorError):
-                injector.require(TestService)
+        with SyncInjector(services) as injector, pytest.raises(AsyncInSyncInjectorError):
+            injector.require(TestService)
 
     def test_fail_async_yield_resolver(self) -> None:
         """An async generator resolver fails."""
@@ -107,9 +106,8 @@ class TestFailAsyncInSyncInjector:
 
         services.add_singleton(resource_resolver)
 
-        with SyncInjector(services) as injector:
-            with pytest.raises(AsyncInSyncInjectorError):
-                injector.require(Resource)
+        with SyncInjector(services) as injector, pytest.raises(AsyncInSyncInjectorError):
+            injector.require(Resource)
 
     def test_fail_context_manager_async_resolver(self) -> None:
         """An async generator resolver with teardown fails the same way."""
@@ -129,9 +127,8 @@ class TestFailAsyncInSyncInjector:
 
         services.add_singleton(resource_resolver)
 
-        with SyncInjector(services) as injector:
-            with pytest.raises(AsyncInSyncInjectorError):
-                injector.require(Resource)
+        with SyncInjector(services) as injector, pytest.raises(AsyncInSyncInjectorError):
+            injector.require(Resource)
 
     def test_refused_coroutine_is_closed_without_warning(self) -> None:
         """The refused coroutine is closed by the error, so nothing is left un-awaited."""
@@ -160,13 +157,13 @@ class TestAsyncContextManagerServices:
         events: list[str] = []
 
         class Resource:
-            async def __aenter__(self) -> "Resource":
+            async def __aenter__(self) -> Self:
                 events.append("aenter")
                 return self
 
             async def __aexit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -178,9 +175,8 @@ class TestAsyncContextManagerServices:
 
         services.add_singleton(Resource)
 
-        with SyncInjector(services) as injector:
-            with pytest.raises(AsyncContextManagerInSyncInjectorError) as exc_info:
-                injector.require(Resource)
+        with SyncInjector(services) as injector, pytest.raises(AsyncContextManagerInSyncInjectorError) as exc_info:
+            injector.require(Resource)
 
         assert events == []
         assert exc_info.value.code == "soupape.injector.async_context_manager_in_sync"
@@ -195,12 +191,12 @@ class TestAsyncContextManagerServices:
         services = ServiceCollection()
 
         class Resource:
-            async def __aenter__(self) -> "Resource":
+            async def __aenter__(self) -> Self:
                 return self
 
             async def __aexit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None: ...
@@ -212,9 +208,8 @@ class TestAsyncContextManagerServices:
         services.add_singleton(Resource)
         services.add_singleton(Service)
 
-        with SyncInjector(services) as injector:
-            with pytest.raises(AsyncContextManagerInSyncInjectorError):
-                injector.require(Service)
+        with SyncInjector(services) as injector, pytest.raises(AsyncContextManagerInSyncInjectorError):
+            injector.require(Service)
 
     def test_service_with_both_protocols_uses_sync_context_manager(self) -> None:
         """A service implementing both protocols is entered and exited through the sync one."""
@@ -222,7 +217,7 @@ class TestAsyncContextManagerServices:
         events: list[str] = []
 
         class Resource:
-            def __enter__(self) -> "Resource":
+            def __enter__(self) -> Self:
                 events.append("enter")
                 return self
 
@@ -234,7 +229,7 @@ class TestAsyncContextManagerServices:
             ) -> None:
                 events.append("exit")
 
-            async def __aenter__(self) -> "Resource":
+            async def __aenter__(self) -> Self:
                 events.append("aenter")
                 return self
 

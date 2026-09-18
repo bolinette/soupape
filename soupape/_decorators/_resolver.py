@@ -39,6 +39,7 @@ def resolver(*args: Any) -> Any:
     match args:
         case (resolvable, resolver):
             _set_resolver(resolvable, resolver)
+            return resolvable
         case (resolver,):
 
             def inner(resolvable: Any) -> Any:

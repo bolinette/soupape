@@ -1,6 +1,7 @@
 import inspect
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, cast
+from types import TracebackType
+from typing import Any, Self, cast
 
 import pytest
 from peritype import FWrap, TWrap
@@ -62,7 +63,7 @@ class InjectorHarness:
     def get_scoped_injector(self) -> "InjectorHarness":
         return InjectorHarness(self.injector.get_scoped_injector())
 
-    async def __aenter__(self) -> "InjectorHarness":
+    async def __aenter__(self) -> Self:
         if isinstance(self.injector, AsyncInjector):
             await self.injector.__aenter__()
         else:
@@ -73,7 +74,7 @@ class InjectorHarness:
         self,
         exc_type: type[BaseException] | None,
         exc_value: BaseException | None,
-        traceback: Any,
+        traceback: TracebackType | None,
     ) -> None:
         if isinstance(self.injector, AsyncInjector):
             await self.injector.__aexit__(exc_type, exc_value, traceback)

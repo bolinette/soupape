@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar, TypeGuard, get_origin
+from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeGuard, get_origin, override
 
 from hafersack import Hafersack
 from peritype import FWrap, TWrap
@@ -17,11 +17,12 @@ class Absent:
     __slots__ = ()
     _instance: "ClassVar[Absent | None]" = None
 
-    def __new__(cls) -> "Absent":
+    def __new__(cls) -> Self:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-        return cls._instance
+        return cls._instance  # pyright: ignore[reportReturnType]
 
+    @override
     def __repr__(self) -> str:
         return "ABSENT"
 
@@ -80,7 +81,7 @@ def add_type_to_type_globals(receiving: type[Any], received: type[Any]) -> None:
 
     This is useful when using classes defined in a local scope.
     """
-    receiving.__init__.__globals__[received.__name__] = received  # type: ignore
+    receiving.__init__.__globals__[received.__name__] = received  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
 
 
 def get_meta_on_twrap[T](

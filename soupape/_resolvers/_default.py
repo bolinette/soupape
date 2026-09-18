@@ -69,8 +69,7 @@ class DefaultResolver[**P, T](ServiceResolver[P, T]):
     def get_resolution_func(self, context: ResolutionContext) -> ResolutionFunction[P, T]:
         if context.injector.is_async:
             return _AsyncServiceDefaultResolveFunc(self, context)
-        else:
-            return _SyncServiceDefaultResolveFunc(self, context)
+        return _SyncServiceDefaultResolveFunc(self, context)
 
     @property
     def post_inits(self) -> tuple[Callable[..., Any], ...]:

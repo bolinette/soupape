@@ -9,7 +9,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, AsyncIterator
 from types import TracebackType
-from typing import Annotated, override
+from typing import Annotated, Self, override
 
 import pytest
 from peritype import wrap_type
@@ -275,12 +275,12 @@ class TestAsyncContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            async def __aenter__(self) -> "Resource":
+            async def __aenter__(self) -> Self:
                 return self
 
             async def __aexit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -301,12 +301,12 @@ class TestAsyncContextManagerServices:
             def __init__(self) -> None:
                 self.active = True
 
-            async def __aenter__(self) -> "Resource":
+            async def __aenter__(self) -> Self:
                 return self
 
             async def __aexit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -328,12 +328,12 @@ class TestAsyncContextManagerServices:
         events: list[str] = []
 
         class Database:
-            async def __aenter__(self) -> "Database":
+            async def __aenter__(self) -> Self:
                 return self
 
             async def __aexit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -343,12 +343,12 @@ class TestAsyncContextManagerServices:
             def __init__(self, database: Database) -> None:
                 self.database = database
 
-            def __enter__(self) -> "Repository":
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -358,12 +358,12 @@ class TestAsyncContextManagerServices:
             def __init__(self, repository: Repository) -> None:
                 self.repository = repository
 
-            async def __aenter__(self) -> "Service":
+            async def __aenter__(self) -> Self:
                 return self
 
             async def __aexit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -384,12 +384,12 @@ class TestAsyncContextManagerServices:
         events: list[str] = []
 
         class Database:
-            async def __aenter__(self) -> "Database":
+            async def __aenter__(self) -> Self:
                 return self
 
             async def __aexit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -399,12 +399,12 @@ class TestAsyncContextManagerServices:
             def __init__(self, database: Database) -> None:
                 self.database = database
 
-            async def __aenter__(self) -> "Repository":
+            async def __aenter__(self) -> Self:
                 return self
 
             async def __aexit__(
                 self,
-                exc_type: type[BaseException],
+                exc_type: type[BaseException] | None,
                 exc_value: BaseException | None,
                 traceback: TracebackType | None,
             ) -> None:
@@ -424,7 +424,7 @@ class TestAsyncContextManagerServices:
         received: list[type[BaseException] | None] = []
 
         class Resource:
-            async def __aenter__(self) -> "Resource":
+            async def __aenter__(self) -> Self:
                 return self
 
             async def __aexit__(
@@ -437,7 +437,7 @@ class TestAsyncContextManagerServices:
 
         services.add_scoped(Resource)
 
-        with pytest.raises(ValueError, match="boom"):
+        with pytest.raises(ValueError, match="boom"):  # noqa: PT012  the raise must happen inside the scope
             async with AsyncInjector(services).get_scoped_injector() as injector:
                 await injector.require(Resource)
                 raise ValueError("boom")
@@ -638,7 +638,7 @@ class TestConcurrentResolution:
         built: list[str] = []
 
         class Pool:
-            async def __aenter__(self) -> "Pool":
+            async def __aenter__(self) -> Self:
                 built.append("pool")
                 await asyncio.sleep(0)
                 return self
@@ -664,7 +664,7 @@ class TestConcurrentResolution:
         built: list[str] = []
 
         class Pool:
-            async def __aenter__(self) -> "Pool":
+            async def __aenter__(self) -> Self:
                 built.append("pool")
                 await asyncio.sleep(0)
                 return self
@@ -678,9 +678,12 @@ class TestConcurrentResolution:
 
         services.add_singleton(Pool)
 
-        async with AsyncInjector(services) as root:
-            async with root.get_scoped_injector() as scoped1, root.get_scoped_injector() as scoped2:
-                first, second = await asyncio.gather(scoped1.require(Pool), scoped2.require(Pool))
+        async with (
+            AsyncInjector(services) as root,
+            root.get_scoped_injector() as scoped1,
+            root.get_scoped_injector() as scoped2,
+        ):
+            first, second = await asyncio.gather(scoped1.require(Pool), scoped2.require(Pool))
 
         assert first is second
         assert built == ["pool"]
@@ -691,7 +694,7 @@ class TestConcurrentResolution:
         built: list[str] = []
 
         class Session:
-            async def __aenter__(self) -> "Session":
+            async def __aenter__(self) -> Self:
                 built.append("session")
                 await asyncio.sleep(0)
                 return self
@@ -705,13 +708,16 @@ class TestConcurrentResolution:
 
         services.add_scoped(Session)
 
-        async with AsyncInjector(services) as root:
-            async with root.get_scoped_injector() as scoped1, root.get_scoped_injector() as scoped2:
-                first, second, other = await asyncio.gather(
-                    scoped1.require(Session),
-                    scoped1.require(Session),
-                    scoped2.require(Session),
-                )
+        async with (
+            AsyncInjector(services) as root,
+            root.get_scoped_injector() as scoped1,
+            root.get_scoped_injector() as scoped2,
+        ):
+            first, second, other = await asyncio.gather(
+                scoped1.require(Session),
+                scoped1.require(Session),
+                scoped2.require(Session),
+            )
 
         assert first is second
         assert other is not first
@@ -722,7 +728,7 @@ class TestConcurrentResolution:
         services = ServiceCollection()
 
         class Worker:
-            async def __aenter__(self) -> "Worker":
+            async def __aenter__(self) -> Self:
                 await asyncio.sleep(0)
                 return self
 
@@ -746,7 +752,7 @@ class TestConcurrentResolution:
         built: list[str] = []
 
         class Pool:
-            async def __aenter__(self) -> "Pool":
+            async def __aenter__(self) -> Self:
                 built.append("pool")
                 await asyncio.sleep(0)
                 return self
@@ -782,7 +788,7 @@ class TestConcurrentResolution:
         attempts: list[int] = []
 
         class Pool:
-            async def __aenter__(self) -> "Pool":
+            async def __aenter__(self) -> Self:
                 attempts.append(len(attempts))
                 await asyncio.sleep(0)
                 if len(attempts) == 1:

@@ -133,8 +133,7 @@ class AsyncInjector(BaseInjector, Injector):
         named_args: dict[str, Any] | None = None,
     ) -> T:
         resolved_args: list[Any] = list(positional_args or [])
-        for arg in node.args:
-            resolved_args.append(await self._resolve_service(arg))
+        resolved_args.extend([await self._resolve_service(arg) for arg in node.args])
 
         resolved_kwargs: dict[str, Any] = dict(named_args or {})
         for kwarg_name, kwarg in node.kwargs.items():
@@ -151,7 +150,7 @@ class AsyncInjector(BaseInjector, Injector):
             resolved = await resolved
 
         self._set_instance(node, resolved)
-        return resolved  # type: ignore
+        return resolved  # pyright: ignore[reportReturnType]
 
     @override
     async def require[T](
